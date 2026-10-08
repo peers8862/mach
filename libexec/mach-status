@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+# mach-summary: Show recent runs and their state, or one run in detail
+# mach-group: gateway
+# mach-flag: --status | only runs in this state | all
+# mach-flag: -n | number of runs to show | 10
+# mach-flag: --all | show every run | off
+# mach-usage: mach status [id] [--status S] [-n N] [--all] [--json]
+# mach-help: Without an id: the most recent runs (default 15) from files/runs/. With an id (or unique prefix): that run's
+# mach-help: frontmatter, steps table, outputs and notes. Status values: queued, running, waiting-approval, done, failed, cancelled.
+# mach-help: Runs from every machine are listed (each machine writes only its own records; Syncthing carries them).
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+
+BRIEF = ["id", "created", "machine", "tool", "status", "kind", "title", "gate", "reason"]
+
+
+def brief(run):
+    return dict((k, run.meta.get(k, "")) for k in BRIEF)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach status", add_help=False)
+    ap.add_argument("id", nargs="?")
+    ap.add_argument("--status")
+    ap.add_argument("-n", type=int, default=15)
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    js = a.json or mc.env_flag("MACH_JSON")
+    if a.id:
+        try:
+            run = mr.find_run(a.id, cfg)
+        except ValueError as exc:
+            mc.die(str(exc))
+        if run is None:
+            mc.die("no run matches %r" % a.id)
+        if js:
+            mc.emit_json({"meta": run.meta, "steps": run.steps, "notes": run.notes, "dir": mc.tilde(run.dir)})
+            return 0
+        print("run %s: %s" % (run.id, run.status))
+        for k in ("created", "machine", "tool", "kind", "path", "title", "input", "source", "flow", "approval", "permission", "gate", "reason"):
+            if run.meta.get(k, "") != "":
+                print("  %-10s %s" % (k, run.meta[k]))
+        print("  %-10s %s" % ("folder", mc.tilde(run.dir)))
+        if run.steps:
+            print("steps:")
+            for s in run.steps:
+                print("  %2d  %-9s %-18s %-8s %s" % (s["n"], s["status"], s["step"], s["tool"], s["output"]))
+        if run.meta.get("outputs"):
+            print("outputs: " + ", ".join(run.meta["outputs"]))
+        for n in run.notes:
+            print("note: " + n)
+        return 0
+    runs = mr.list_runs(cfg)
+    if a.status:
+        runs = [r for r in runs if r.status == a.status]
+    if not a.all:
+        runs = runs[: a.n]
+    if js:
+        mc.emit_json([brief(r) for r in runs])
+        return 0
+    if not runs:
+        print("no runs yet (records live in %s)" % mc.tilde(mc.runs_dir(cfg)))
+        return 0
+    for r in runs:
+        print("%-44s %-17s %-13s %-8s %s" % (r.id[:44], r.status, r.meta.get("tool", ""), r.meta.get("machine", ""), mc.truncate(r.meta.get("title", ""), 50)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

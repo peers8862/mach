@@ -1,0 +1,11 @@
+# Copy to ~/machine-flows/service-settings/mach/hosts/mac-laptop.toml. Read only by mac-laptop.
+[note]
+default = "drafts"                # a plain `mach note "..."` lands in Drafts on the Mac
+
+[routes]
+default_tool = "claude"
+
+[doctor]
+mem_min_avail_mb = 400            # the Mac has 8 GB: warn a little earlier on memory pressure
+disk_min_free_pct = 10
+scan_budget_s = 2                 # keep the hygiene walk light on the Mac

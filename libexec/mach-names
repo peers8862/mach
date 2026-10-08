@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# mach-summary: Check that CLI agent names are explicit (cursor-agent, grokcli-agent, no bare `agent`)
+# mach-group: upkeep
+# mach-flag: --fix | repair names that are not explicit | off (check only)
+# mach-usage: mach names [--fix] [--apply]
+# mach-help: Report mode (default): looks for a bare `agent` in ~/.local/bin, ~/.grok/bin and /usr/local/bin, checks that
+# mach-help: cursor-agent (and grokcli-agent when grok is installed) exist, and that `agent` is not on PATH. Exit 1 on problems.
+# mach-help: --fix previews what it would do: remove bare `agent` SYMLINKS in the two user bin dirs (targets recorded in
+# mach-help: ~/machine-flows-staging/backups/<ts>-mach-names/removed-links.tsv) and create grokcli-agent -> ~/.grok/bin/grok if missing.
+# mach-help: It acts only with --apply (or an interactive y). /usr/local/bin is never touched. Never runs any CLI, never uses sudo.
+# mach-help: After any Cursor or grok install or update the vendor installers recreate `agent`: run `mach names --fix --apply`.
+# mach-help: Test/relocation knob: MACH_BIN_DIR replaces ~/.local/bin.
+set -u
+MACH_HOME=${MACH_HOME:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# shellcheck source=/dev/null
+. "$MACH_HOME/lib/common.sh"
+
+FIX=0; APPLY=0; YES=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --fix) FIX=1 ;;
+    --apply) APPLY=1 ;;
+    --yes|-y) YES=1 ;;
+    --dry-run) ;;
+    *) die "unknown option: $1 (try: mach names --help)" ;;
+  esac
+  shift
+done
+
+BIN=${MACH_BIN_DIR:-$HOME/.local/bin}
+GROKBIN="$HOME/.grok/bin"
+STATUS=0
+
+target() {
+  if [ -L "$1" ]; then readlink "$1"
+  elif [ -e "$1" ]; then printf '(regular file)'
+  else printf '(absent)'; fi
+}
+
+REMOVE_LIST=""
+for p in "$BIN/agent" "$GROKBIN/agent" "/usr/local/bin/agent"; do
+  [ -e "$p" ] || [ -L "$p" ] || continue
+  case "$p" in
+    /usr/local/bin/*) warn "bare agent: $p -> $(target "$p") (outside the user bin dirs: remove by hand if wanted)"; STATUS=1; continue ;;
+  esac
+  if [ -L "$p" ]; then
+    warn "bare agent: $(mach_tilde "$p") -> $(target "$p")"
+    REMOVE_LIST="$REMOVE_LIST
+$p"
+  else
+    warn "bare agent: $(mach_tilde "$p") is a regular file (not a symlink): not removed automatically"
+  fi
+  STATUS=1
+done
+
+CREATE_GROK=0
+if [ ! -e "$BIN/grokcli-agent" ] && [ -e "$GROKBIN/grok" ]; then CREATE_GROK=1; fi
+
+for n in cursor-agent grokcli-agent; do
+  if [ -e "$BIN/$n" ]; then
+    ok "$(mach_tilde "$BIN/$n") -> $(target "$BIN/$n")"
+  else
+    case "$n" in
+      grokcli-agent)
+        if [ -d "$GROKBIN" ]; then warn "missing: $(mach_tilde "$BIN/$n") (grok is installed)"; STATUS=1
+        else info "n/a: $n (xAI grok not installed here)"; fi ;;
+      *) warn "missing: $(mach_tilde "$BIN/$n")"; STATUS=1 ;;
+    esac
+  fi
+done
+
+if command -v agent >/dev/null 2>&1; then
+  warn "'agent' still resolves on PATH: $(command -v agent)"
+  STATUS=1
+else
+  ok "no 'agent' on PATH"
+fi
+
+if [ "$FIX" = 0 ]; then
+  [ "$STATUS" = 0 ] || printf 'fix: mach names --fix   (preview), then --apply\n'
+  exit "$STATUS"
+fi
+
+# --- --fix: preview, then act only when approved
+NACT=0
+printf 'fix plan:\n'
+for p in $(printf '%s' "$REMOVE_LIST"); do
+  printf '  remove symlink %s (target recorded for rollback)\n' "$(mach_tilde "$p")"
+  NACT=$((NACT + 1))
+done
+if [ "$CREATE_GROK" = 1 ]; then
+  printf '  create symlink %s -> %s\n' "$(mach_tilde "$BIN/grokcli-agent")" "$(mach_tilde "$GROKBIN/grok")"
+  NACT=$((NACT + 1))
+fi
+if [ "$NACT" = 0 ]; then
+  printf '  nothing to fix\n'
+  exit "$STATUS"
+fi
+
+DO=0
+if [ "$APPLY" = 1 ] || [ "$YES" = 1 ]; then DO=1
+elif [ -t 0 ] && [ -t 1 ]; then
+  printf 'Apply? [y/N] '; read -r ans
+  case "$ans" in y|Y|yes|YES) DO=1 ;; esac
+fi
+if [ "$DO" = 0 ]; then
+  printf 'preview only: run again with --fix --apply\n'
+  exit "$STATUS"
+fi
+
+mach_bk_init names
+for p in $(printf '%s' "$REMOVE_LIST"); do
+  mach_bk_link "$p"
+  rm -f "$p" && ok "removed $(mach_tilde "$p")"
+done
+if [ "$CREATE_GROK" = 1 ]; then
+  mkdir -p "$BIN" && ln -s "$GROKBIN/grok" "$BIN/grokcli-agent" && { mach_bk_created "$BIN/grokcli-agent"; ok "created $(mach_tilde "$BIN/grokcli-agent") -> $(mach_tilde "$GROKBIN/grok")"; }
+fi
+mach_bk_finish
+hash -r 2>/dev/null
+if command -v agent >/dev/null 2>&1; then
+  warn "'agent' still resolves on PATH: $(command -v agent)"
+  exit 1
+fi
+exit 0

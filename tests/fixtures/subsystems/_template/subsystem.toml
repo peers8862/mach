@@ -1,0 +1,28 @@
+# Copy with `mach subsystem new <id> --apply`; edit the proposed bindings and roles.
+schema = 1
+id = "example"
+name = "Example subsystem"
+working_root = "~/example"
+linear_team = ""
+note_dest = "inbox"
+
+[delivery]
+max_fires_per_day = 20
+reply = "chat"
+
+[units.example]
+name = "Example unit"
+kind = "pillar"
+verified = false
+notes = "Replace this example."
+
+[units.example.roles]
+lead = "grokbot:Example"
+since = "2026-10-08"
+changed = []
+assignments = []
+
+[services."grokbot:Example"]
+strengths = ["context"]
+limits = ["each fire uses Grok Bot quota"]
+workloads = []

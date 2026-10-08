@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+# mach-summary: List queued runs, runs waiting for approval, inbox prompts not yet run, and outbox items
+# mach-group: gateway
+# mach-flag: --due | only items due on this date (today or YYYY-MM-DD) | all
+# mach-usage: mach queue [--due today|YYYY-MM-DD] [--json]
+# mach-help: Sections: queued runs, waiting-approval runs, inbox prompts (files/inbox/prompts/*.md that have no run yet,
+# mach-help: with the machine that will execute them), and outbox items (files/inbox/outbox/<dest>/, waiting for `mach note flush`).
+# mach-help: --due filters inbox prompts by their `due:` date ("today" = the local date).
+import argparse
+import hashlib
+import re
+import glob
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+import mach_exec as ex  # noqa: E402
+import frontmatter as fm  # noqa: E402
+import mach_subsystem as ss  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach queue", add_help=False)
+    ap.add_argument("--due")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    js = a.json or mc.env_flag("MACH_JSON")
+    runs = mr.list_runs(cfg)
+    queued = [r for r in runs if r.status == "queued"]
+    waiting = [r for r in runs if r.status == "waiting-approval"]
+    items = ex.inbox_items(cfg, runs)
+    inbox = [i for i in items if not i["ran"]]
+    if a.due:
+        due = mc.now().strftime("%Y-%m-%d") if a.due == "today" else a.due
+        inbox = [i for i in inbox if i["due"] == due]
+    out = ex.outbox_items()
+    ingested = set()
+    for sid in ss.ids():
+        try:
+            text = mc.read_text(ss.path(sid))
+            ingested.update(re.findall(r'^# mach-ingested-sha256: ([0-9a-f]{64})$', text, re.M))
+        except OSError: pass
+    subsystem_drafts = []
+    for p in sorted(glob.glob(os.path.join(mc.mf_root(), "files", "inbox", "subsystems", "*.md"))):
+        with open(p,'rb') as fh: digest = hashlib.sha256(fh.read()).hexdigest()
+        if digest in ingested: continue
+        d = fm.parse_file(p)
+        typ = d.meta.get("type", "")
+        sid = d.meta.get("id") if typ == "subsystem-setup" else d.meta.get("subsystem")
+        verb = {"subsystem-setup":"new", "unit-setup":"unit", "role-change":"role"}.get(typ)
+        if verb and sid: subsystem_drafts.append({"path":p,"type":typ,"command":"mach subsystem %s %s --from %s" % (verb,sid,mc.shell_path(p))})
+    maxh = float(cfg.get("doctor.outbox_max_age_hours", 24))
+    if js:
+        mc.emit_json({
+            "queued": [{"id": r.id, "machine": r.meta.get("machine"), "tool": r.meta.get("tool"), "title": r.meta.get("title")} for r in queued],
+            "waiting_approval": [{"id": r.id, "gate": r.meta.get("gate"), "reason": r.meta.get("reason"), "title": r.meta.get("title")} for r in waiting],
+            "inbox": [{"source": i["source"], "valid": i["ok"], "machine": i["machine"], "executor": i["executor"], "due": i["due"], "title": i["title"]} for i in inbox],
+            "subsystem_drafts": subsystem_drafts,
+            "outbox": [{"dest": o["dest"], "name": o["name"], "age_hours": o["age_hours"], "overdue": o["age_hours"] > maxh} for o in out],
+        })
+        return 0
+    print("queued runs (%d):" % len(queued))
+    for r in queued:
+        print("  %-44s -> %-8s %s" % (r.id[:44], r.meta.get("machine", ""), mc.truncate(r.meta.get("title", ""), 40)))
+    print("waiting for approval (%d):" % len(waiting))
+    for r in waiting:
+        print("  %-44s gate=%s  %s" % (r.id[:44], r.meta.get("gate", ""), mc.truncate(r.meta.get("reason", ""), 50)))
+    print("inbox prompts not yet run (%d):" % len(inbox))
+    for i in inbox:
+        flag = "" if i["ok"] else "  INVALID (mach run %s to see why)" % i["source"]
+        print("  %-40s machine=%s (runs on %s) due=%s%s" % (i["name"][:40], i["machine"], i["executor"], i["due"] or "-", flag))
+    print("subsystem drafts (%d):" % len(subsystem_drafts))
+    for item in subsystem_drafts: print("  " + item["command"])
+    print("outbox (%d):" % len(out))
+    for o in out:
+        late = "  OVERDUE (>%gh)" % maxh if o["age_hours"] > maxh else ""
+        print("  %-10s %-34s %5.1fh old%s" % (o["dest"], o["name"][:34], o["age_hours"], late))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

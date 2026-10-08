@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+# mach-summary: Read-only health checks for this machine (Syncthing, services, CLI names, Grok Bot, disk, hygiene, caps)
+# mach-group: upkeep
+# mach-flag: --quiet | print only warnings and failures | off
+# mach-usage: mach doctor [--json] [--quiet]
+# mach-help: Prints one line per check: OK|WARN|FAIL|INFO  <check>  <detail>, then a summary. Exit code: 0 all OK/INFO,
+# mach-help: 1 any WARN, 2 any FAIL. Read-only: it changes nothing and prints no secrets (the Syncthing API key is used from
+# mach-help: memory only; Grok Bot credential files are never opened). Every external call has a timeout; the run stays under ~15 s.
+# mach-help: --quiet prints only WARN/FAIL lines and the summary. --json prints {host, checks[], summary, exit}.
+# mach-help: Config: [doctor] in service-settings/mach/config.toml (thresholds, peer_ssh, syncthing_url).
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_doctor as md  # noqa: E402
+import mach_subsystem as ss  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach doctor", add_help=False)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--quiet", "-q", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config()
+    js = a.json or mc.env_flag("MACH_JSON")
+    results = md.run_all(cfg)
+    bad = []
+    for sid in ss.ids():
+        try:
+            if any(lv == "FAIL" for lv,_ in ss.lint(ss.load(sid),sid)): bad.append(sid)
+        except (OSError,ValueError): bad.append(sid)
+    results.append((md.FAIL if bad else md.OK, "subsystems", "invalid: " + ", ".join(bad) if bad else "%d manifests lint" % len(ss.ids())))
+    code = md.exit_code(results)
+    counts = dict((lv, sum(1 for r in results if r[0] == lv)) for lv in (md.OK, md.WARN, md.FAIL, md.INFO))
+    if js:
+        mc.emit_json({"host": mc.host(), "version": mc.version(),
+                      "checks": [{"level": lv, "check": ck, "detail": dt} for lv, ck, dt in results],
+                      "summary": counts, "exit": code})
+        return code
+    for lv, ck, dt in results:
+        if a.quiet and lv in (md.OK, md.INFO):
+            continue
+        print(mc.status_line(lv, ck, dt))
+    print("")
+    print("doctor %s: %d OK, %d WARN, %d FAIL, %d INFO (exit %d)" % (mc.host(), counts[md.OK], counts[md.WARN], counts[md.FAIL], counts[md.INFO], code))
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

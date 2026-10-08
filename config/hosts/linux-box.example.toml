@@ -1,0 +1,9 @@
+# Copy to ~/machine-flows/service-settings/mach/hosts/linux-box.toml. Read only by linux-box.
+[note]
+default = "inbox"                 # on linux-box agenda/drafts notes go to the synced outbox; the Mac delivers them
+
+[routes]
+default_tool = "claude"
+
+[doctor]
+peer_ssh = ""                     # e.g. "mac-laptop" once an ssh alias exists

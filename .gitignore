@@ -1,0 +1,11 @@
+# test sandboxes and scratch (tests/lib.sh creates .tmp/t.*)
+.tmp/
+__pycache__/
+*.pyc
+*.bak
+*.orig
+.DS_Store
+
+# personal docs-index history (never committed; format: config/docs-history.example.py)
+config/docs-history.local.py
+config/*.local.*

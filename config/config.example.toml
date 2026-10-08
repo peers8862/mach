@@ -1,0 +1,96 @@
+# mach example config. Copy to ~/machine-flows/service-settings/mach/config.toml (shared, synced) and edit.
+# Per-machine overrides: service-settings/mach/hosts/<host>.toml (see config/hosts/*.example.toml).
+# Unsynced local experiments: ~/.config/mach/local.toml
+# Precedence: command-line flags > env (MACH_NOTE_DEFAULT, MACH_DEFAULT_TOOL, MACH_PEER_SSH, MACH_RETENTION_DAYS)
+#             > local.toml > hosts/<host>.toml > config.toml > built-in defaults.
+# mach works with NO config file at all. No secrets belong here (Agenda's MCP is localhost-only and has no token).
+
+# ---------------------------------------------------------------- machines (names are yours; mach has none built in)
+[machines]
+names = []                        # known machine names, e.g. ["linux-box", "mac-laptop"]; valid values of `machine:` in documents
+mac = ""                          # the macOS machine that delivers Agenda/Drafts notes and runs `mach docs macstat`
+collector = ""                    # the machine that runs `mach docs collect` (single writer); empty = the machine you run on
+# [machines.match]                # short hostname prefix (lower case) -> machine name; unmatched hostnames keep their own name
+# mac-laptop = "mac-laptop"       # e.g. a hostname "Mac-Laptop-Air.local" is the machine "mac-laptop"
+
+# ---------------------------------------------------------------- notes: `mach note`
+[note]
+default = "inbox"                 # inbox | agenda | drafts | <named destination>
+
+[note.inbox]
+dir = "files/inbox/notes"         # relative to ~/machine-flows
+
+[note.agenda]
+project = "Inbox"                 # set it: without a project Agenda uses the selected project, or errors if none is selected
+method = ["mcp", "url"]           # tried in order on macOS, then the outbox fallback
+mcp_url = "http://127.0.0.1:16106/mcp"
+tags = []
+
+[note.drafts]
+tags = ["mach"]
+method = ["cli", "url"]
+
+[note.dest.ideas]                 # a named destination: `mach note ideas "..."`
+type = "file"                     # file | inbox | agenda | drafts
+path = "files/ideas.md"           # must stay inside ~/machine-flows
+
+[note.dest.work]
+type = "agenda"
+project = "Example Project"
+
+# ---------------------------------------------------------------- routing: `mach do`, prompt documents
+[routes]
+default_tool = "claude"           # claude | codex | cursor-agent | grokcli-agent | kiro
+default_machine = ""              # empty = the machine you run on
+permission = "read-only"          # read-only | write (flags --write override)
+
+[routes.project.example]         # work under this path goes to this tool (and machine)
+path = "~/projects/example"
+tool = "codex"
+machine = "linux-box"
+
+# ---------------------------------------------------------------- tool overrides (optional)
+[tools.claude]
+command = "claude"                # executable name; the headless flags are built in (see docs/DECISIONS.md)
+# read_args = ["-p"]              # replace the built-in read-only flags (the prompt is appended last)
+# write_args = ["-p", "--permission-mode", "acceptEdits"]
+
+[tools.kiro]
+command = "kiro-cli"
+
+# ---------------------------------------------------------------- doctor
+[doctor]
+peer_ssh = ""                     # ssh host alias of the other machine; empty = skip the ssh check
+disk_min_free_pct = 10
+mem_min_avail_mb = 500
+outbox_max_age_hours = 24
+agents_max_lines = 130            # plan 09 section 8 (hard cap is ~150)
+lessons_index_max_lines = 300
+proposed_max = 30
+grokbot_heartbeat_max_age_s = 180
+syncthing_url = "http://127.0.0.1:8384"
+syncthing_folder = "machine-flows"
+scan_budget_s = 4                 # time allowed for the machine-flows hygiene walk
+
+# ---------------------------------------------------------------- runs and queue
+[runs]
+dir = ""                          # empty = ~/machine-flows/files/runs (env MACH_RUNS_DIR overrides)
+retention_days = 90               # full records kept this long, then monthly summaries (compaction is a later step)
+
+[queue]
+background_machine = ""           # where `machine: any` documents run (--inbox, --queue); empty = the machine you run on
+
+# ---------------------------------------------------------------- memory
+[memory]
+lessons_dir = "service-memories/lessons"
+reviews_dir = ""                  # empty = <lessons_dir>/reviews (env MACH_REVIEWS_DIR overrides); `mach memory review --save` writes YYYY-MM.md there
+
+# ---------------------------------------------------------------- docs index
+[docs]
+macstat_paths = []                # extra paths (relative to ~ on the Mac) `mach docs macstat` should stat
+macstat_cron_pattern = "machine-flows"   # crontab lines matching this (grep -E) are recorded by `mach docs macstat`
+
+# ---------------------------------------------------------------- Drafts hub (tools/build-drafts-hub.py)
+[drafts]
+hub_name = "Mach Hub"             # name of the generated Drafts action; --name overrides it
+hub_group_uuid = ""               # Drafts action group to import into; empty = a stable generated id

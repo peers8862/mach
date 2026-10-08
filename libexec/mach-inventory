@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# mach-summary: Regenerate inventory/<host>/ for this machine, show the diff, write only with --apply
+# mach-group: upkeep
+# mach-flag: --section | regenerate only this section | all sections
+# mach-flag: --light | skip the slow size, network and brew checks | on for macOS
+# mach-flag: --full | run the full generator | on for Linux
+# mach-flag: --diff | show the diff only | off
+# mach-usage: mach inventory [--host H] [--section S] [--light|--full] [--diff] [--apply]
+# mach-help: Runs scripts/inventory-linux.sh (or inventory-macos.sh) into a temp folder under the staging area, then compares
+# mach-help: it with ~/machine-flows/inventory/<host>/ file by file. Nothing is written without --apply (or an interactive y).
+# mach-help: --host must be the current host: inventories are generated on the machine they describe.
+# mach-help: --section S limits the comparison to files whose name starts with or contains S (e.g. 70, services, raw).
+# mach-help: Linux runs the full generator (home-folder sizes with du, network tests; slow on a spinning disk). macOS runs light by default
+# mach-help: (SKIP_SIZES=1 SKIP_NET=1 SKIP_BREW_DOCTOR=1: no heavy scans on the Mac). --light / --full force one or the other. A light run
+# mach-help: replaces the sizes table with a "skipped" note when applied, so use --full when you want the sizes refreshed.
+# mach-help: --diff shows the whole diff per file instead of the first lines. The hand-maintained 75/76 files and docs-index.csv
+# mach-help: are never touched, and the generated inventory/README.md is not copied (it would drop the other machine's notes).
+# mach-help: --apply backs the replaced files up to ~/machine-flows-staging/backups/<ts>-mach-inventory/ and prints a rollback line.
+# mach-help: Afterwards run `mach docs` (preview) so the docs index records the new modified dates.
+set -u
+MACH_HOME=${MACH_HOME:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# shellcheck source=/dev/null
+. "$MACH_HOME/lib/common.sh"
+
+APPLY=0; YES=0; FULL=-1; SHOWDIFF=0; SECTION=""; TARGET="${MACH_TARGET_HOST:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply) APPLY=1 ;;
+    --yes|-y) YES=1 ;;
+    --full) FULL=1 ;;
+    --light) FULL=0 ;;
+    --diff) SHOWDIFF=1 ;;
+    --section) [ $# -ge 2 ] || die "--section needs a value"; SECTION=$2; shift ;;
+    --host) [ $# -ge 2 ] || die "--host needs a value"; TARGET=$2; shift ;;
+    --dry-run) ;;
+    *) die "unknown option: $1 (try: mach inventory --help)" ;;
+  esac
+  shift
+done
+
+HOST=$(mach_host)
+[ -n "$TARGET" ] || TARGET=$HOST
+if [ "$TARGET" != "$HOST" ]; then
+  die "refusing --host $TARGET: inventories are generated on the machine they describe (this is $HOST)"
+fi
+
+if mach_is_mac; then SCRIPT="$MACH_MF_ROOT/scripts/inventory-macos.sh"; else SCRIPT="$MACH_MF_ROOT/scripts/inventory-linux.sh"; fi
+[ -f "$SCRIPT" ] || die "inventory script not found: $(mach_tilde "$SCRIPT")"
+DEST="$MACH_MF_ROOT/inventory/$HOST"
+
+TMP=$(mach_mktemp_dir) || die "cannot create a temp dir"
+# shellcheck disable=SC2317  # runs through the EXIT trap
+cleanup() { case "$TMP" in */mach.*) rm -rf "$TMP" ;; esac; }
+trap cleanup EXIT
+
+if [ "$FULL" = -1 ]; then
+  if mach_is_mac; then FULL=0; else FULL=1; fi   # no heavy scans on the Mac by default
+fi
+info "generating $HOST inventory into a temp folder ($([ "$FULL" = 1 ] && echo full || echo light); read-only scripts; this can take a while)"
+if [ "$FULL" = 1 ]; then
+  bash "$SCRIPT" "$TMP" >/dev/null 2>"$TMP/.gen-errors" || { err "inventory script failed:"; sed 's/^/  /' "$TMP/.gen-errors" >&2; exit "$MACH_EXIT_FAIL"; }
+else
+  SKIP_SIZES=1 SKIP_NET=1 SKIP_BREW_DOCTOR=1 bash "$SCRIPT" "$TMP" >/dev/null 2>"$TMP/.gen-errors" || { err "inventory script failed:"; sed 's/^/  /' "$TMP/.gen-errors" >&2; exit "$MACH_EXIT_FAIL"; }
+fi
+
+GEN="$TMP/$HOST"
+if [ ! -d "$GEN" ]; then
+  # the script names the folder with its own `hostname -s`; take the one folder it produced
+  GEN=$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+fi
+if [ -z "$GEN" ] || [ ! -d "$GEN" ]; then die "the inventory script produced no <host> folder"; fi
+
+wanted() {
+  # wanted <relative path>: section filter
+  [ -z "$SECTION" ] && return 0
+  case "$1" in
+    "$SECTION"*|*"$SECTION"*) return 0 ;;
+  esac
+  return 1
+}
+protected() {
+  case "$1" in
+    75-custom-startup-services.md|76-custom-scheduled-jobs.md|docs-index.csv|README.md) return 0 ;;
+  esac
+  return 1
+}
+
+CHANGED=""; NEWF=""; SAME=0
+while IFS= read -r rel; do
+  rel=${rel#./}
+  protected "$rel" && continue
+  wanted "$rel" || continue
+  if [ ! -e "$DEST/$rel" ]; then
+    NEWF="$NEWF
+$rel"
+  elif cmp -s "$GEN/$rel" "$DEST/$rel"; then
+    SAME=$((SAME + 1))
+  else
+    CHANGED="$CHANGED
+$rel"
+  fi
+done <<EOF
+$(cd "$GEN" && find . -type f | sort)
+EOF
+
+NCH=$(printf '%s' "$CHANGED" | grep -c . || true)
+NNEW=$(printf '%s' "$NEWF" | grep -c . || true)
+printf 'inventory/%s: %s changed, %s new, %s identical%s\n' "$HOST" "$NCH" "$NNEW" "$SAME" "${SECTION:+ (section: $SECTION)}"
+
+for rel in $(printf '%s' "$NEWF"); do printf '  new      %s\n' "$rel"; done
+printf '%s\n' "$CHANGED" | while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  add=$(diff -u "$DEST/$rel" "$GEN/$rel" | grep -c '^+[^+]' || true)
+  del=$(diff -u "$DEST/$rel" "$GEN/$rel" | grep -c '^-[^-]' || true)
+  printf '  changed  %s (+%s -%s)\n' "$rel" "$add" "$del"
+  case "$rel" in raw/*) [ "$SHOWDIFF" = 1 ] || continue ;; esac
+  if [ "$SHOWDIFF" = 1 ]; then
+    diff -u "$DEST/$rel" "$GEN/$rel" | sed 's/^/    /'
+  else
+    diff -u "$DEST/$rel" "$GEN/$rel" | sed -n '3,14p' | sed 's/^/    /'
+  fi
+done
+
+if [ "$NCH" = 0 ] && [ "$NNEW" = 0 ]; then
+  ok "inventory is up to date (nothing to write)"
+  exit "$MACH_EXIT_OK"
+fi
+
+DO=0
+if [ "$APPLY" = 1 ] || [ "$YES" = 1 ]; then DO=1
+elif [ -t 0 ] && [ -t 1 ]; then
+  printf 'Write these files into %s? [y/N] ' "$(mach_tilde "$DEST")"
+  read -r ans
+  case "$ans" in y|Y|yes|YES) DO=1 ;; esac
+fi
+if [ "$DO" = 0 ]; then
+  printf 'preview only: run again with --apply to write (a backup and rollback line are made first)\n'
+  exit "$MACH_EXIT_OK"
+fi
+
+mach_bk_init inventory
+for rel in $(printf '%s\n%s' "$CHANGED" "$NEWF"); do
+  [ -n "$rel" ] || continue
+  mkdir -p "$(dirname "$DEST/$rel")"
+  if [ -e "$DEST/$rel" ]; then mach_bk_copy "$DEST/$rel"; else mach_bk_created "$DEST/$rel"; fi
+  cp "$GEN/$rel" "$DEST/$rel" || die "copy failed: $rel"
+done
+ok "wrote $((NCH + NNEW)) file(s) to $(mach_tilde "$DEST")"
+mach_bk_finish
+printf 'next: mach docs   (preview the docs-index update for the changed inventory files)\n'
+exit "$MACH_EXIT_OK"

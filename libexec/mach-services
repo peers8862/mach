@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+# mach-summary: Compare live login/boot services and scheduled jobs with the 75/76 index files
+# mach-group: upkeep
+# mach-subcommands: check show
+# mach-flag: --update | print a proposed patch for the 75/76 index files (never writes them) | off
+# mach-usage: mach services [check]            (default: compare live units with the index files)
+# mach-usage: mach services show               (print the rows parsed from 75 and 76 for this host)
+# mach-usage: mach services [check] --update   (print a PROPOSED patch for the index files; v1 never writes them)
+# mach-help: Reads inventory/<host>/75-custom-startup-services.md (login/boot) and 76-custom-scheduled-jobs.md (scheduled).
+# mach-help: Live side, Linux: custom systemd user units/timers in ~/.config/systemd/user, XDG autostart entries, `crontab -l`,
+# mach-help: and `systemctl --user --failed`. Live side, macOS: ~/Library/LaunchAgents plists, `launchctl print`, `crontab -l`.
+# mach-help: Reports OK, MISSING (an active row has no live counterpart), UNLISTED (live item not in the index) and FAILED.
+# mach-help: --update (v1): prints the table rows to add and the rows to re-check as a proposed patch. Nothing is written;
+# mach-help: edit the 75/76 file yourself or ask an agent (plan 00 rules 8 and 14). Exit 1 when anything needs attention.
+import argparse
+import os
+import re
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_doctor as md  # noqa: E402
+
+
+def index_rows(host):
+    out = {}
+    for key, fname in (("startup", "75-custom-startup-services.md"), ("jobs", "76-custom-scheduled-jobs.md")):
+        p = os.path.join(mc.mf_root(), "inventory", host, fname)
+        text = mc.read_text(p)
+        out[key] = {"path": p, "exists": os.path.isfile(p), "text": text, "rows": md.parse_md_table_rows(text)}
+    return out
+
+
+def row_status(key, row):
+    """Last-column status for 75, the 'Status' column (second to last) for 76."""
+    if key == "jobs":
+        return row[-2] if len(row) >= 2 else ""
+    return row[-1] if row else ""
+
+
+def is_active_row(key, row):
+    st = row_status(key, row).lower()
+    if re.search(r"\b(removed|planned|paused|retired|deleted)\b", st):
+        return False
+    return bool(re.search(r"\b(active|enabled|running)\b", st)) or key == "startup" and st != ""
+
+
+def row_tokens(row):
+    """Names a live item would carry: backticked words and basenames of paths in the row."""
+    text = " ".join(row)
+    toks = set()
+    for m in re.finditer(r"`([^`]+)`", text):
+        t = m.group(1).strip()
+        toks.add(os.path.basename(t.rstrip("/")))
+        toks.update(re.findall(r"[\w.@-]+\.(?:service|timer|desktop|plist)", t))
+    toks.update(re.findall(r"[\w.@-]+\.(?:service|timer|desktop|plist)", text))
+    return set(t for t in toks if t)
+
+
+def live_linux():
+    items = []   # (kind, name)
+    udir = os.path.join(mc.home(), ".config", "systemd", "user")
+    if os.path.isdir(udir):
+        for fn in sorted(os.listdir(udir)):
+            p = os.path.join(udir, fn)
+            if os.path.isfile(p) and not os.path.islink(p) and fn.endswith((".service", ".timer")):
+                items.append(("systemd-user", fn))
+    adir = os.path.join(mc.home(), ".config", "autostart")
+    if os.path.isdir(adir):
+        for fn in sorted(os.listdir(adir)):
+            if fn.endswith(".desktop"):
+                items.append(("autostart", fn))
+    return items
+
+
+def live_mac():
+    items = []
+    ldir = os.path.join(mc.home(), "Library", "LaunchAgents")
+    if os.path.isdir(ldir):
+        for fn in sorted(os.listdir(ldir)):
+            if fn.endswith(".plist"):
+                items.append(("launchagent", fn))
+    return items
+
+
+def cron_lines():
+    rc, out, _e = mc.run_capture([mc.cmd("crontab"), "-l"], timeout=4)
+    if rc != 0:
+        return []
+    return [ln.strip() for ln in out.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+
+
+def unit_state(kind, name, mac):
+    if mac and kind == "launchagent":
+        label = name[:-6]
+        rc, out, _e = mc.run_capture([mc.cmd("launchctl"), "print", "gui/%d/%s" % (os.getuid(), label)], timeout=4)
+        if rc != 0:
+            return "not-loaded"
+        return "running" if re.search(r"state\s*=\s*running", out) else "loaded"
+    if kind == "systemd-user":
+        rc, out, _e = mc.run_capture([mc.cmd("systemctl"), "--user", "is-active", name], timeout=3)
+        return out.strip() or ("unknown" if rc == 127 else "inactive")
+    return "present"
+
+
+def failed_units(mac):
+    if mac:
+        return []
+    rc, out, _e = mc.run_capture([mc.cmd("systemctl"), "--user", "--failed", "--no-legend", "--plain"], timeout=4)
+    if rc != 0:
+        return []
+    custom = os.path.join(mc.home(), ".config", "systemd", "user")
+    names = [ln.split()[0] for ln in out.splitlines() if ln.strip()]
+    # only units we could have created: a unit file in ~/.config/systemd/user (desktop scopes and vendor units are not ours)
+    return [n for n in names if n.endswith((".service", ".timer")) and os.path.isfile(os.path.join(custom, n))]
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach services", add_help=False)
+    ap.add_argument("sub", nargs="?", default="check", choices=["check", "show"])
+    ap.add_argument("--update", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    host = mc.host()
+    mac = mc.is_mac()
+    idx = index_rows(host)
+    if a.sub == "show":
+        for key, label in (("startup", "75 login/boot"), ("jobs", "76 scheduled")):
+            print("%s (%s):" % (label, "inventory/%s/%s" % (host, os.path.basename(idx[key]["path"])) if idx[key]["exists"] else "FILE MISSING"))
+            for r in idx[key]["rows"]:
+                print("  %-34s %-44s %s" % (mc.truncate(r[0], 34), mc.truncate(r[1] if len(r) > 1 else "", 44), mc.truncate(row_status(key, r), 40)))
+            for h in md.other_md_tables(idx[key]["text"]):
+                print("  (other table, not parsed as services: %s)" % " | ".join(h))
+        return 0
+    results = []   # (level, what, detail)
+    proposals = []
+    for key, label in (("startup", "75"), ("jobs", "76")):
+        if not idx[key]["exists"]:
+            results.append(("WARN", "index", "inventory/%s/%s is missing" % (host, os.path.basename(idx[key]["path"]))))
+    live = live_mac() if mac else live_linux()
+    cron = cron_lines()
+    alltext = idx["startup"]["text"] + "\n" + idx["jobs"]["text"]
+    live_names = set(n for _k, n in live)
+    # live items versus the index
+    for kind, name in live:
+        listed = name in alltext or (name.endswith(".plist") and name[:-6] in alltext)
+        state = unit_state(kind, name, mac)
+        if not listed:
+            results.append(("WARN", "UNLISTED", "%s %s (%s) is not in the 75/76 index" % (kind, name, state)))
+            proposals.append("| `%s` | %s | `%s` | (when it starts) | (what it runs) | (who created it, when) | (how to disable) | %s |" % (name, kind, name, state))
+        elif state in ("failed", "not-loaded"):
+            results.append(("WARN", "FAILED", "%s %s is %s" % (kind, name, state)))
+        else:
+            results.append(("OK", "listed", "%s %s (%s)" % (kind, name, state)))
+    for ln in cron:
+        cmd_paths = re.findall(r"(?:~|/)[^\s'\"]+", ln)
+        key_bits = [os.path.basename(p) for p in cmd_paths if "/" in p]
+        if any(b and b in alltext for b in key_bits) or ln in alltext:
+            results.append(("OK", "listed", "crontab line: %s" % mc.truncate(ln, 70)))
+        else:
+            results.append(("WARN", "UNLISTED", "crontab line not in the index: %s" % mc.truncate(ln, 70)))
+            proposals.append("| (name) | user crontab | `%s` | (schedule) | (what it runs) | (who, when) | (rollback) | active |" % ln)
+    for u in failed_units(mac):
+        results.append(("WARN", "FAILED", "systemd user unit %s is in the failed state" % u))
+    # index rows versus live items
+    for key in ("startup", "jobs"):
+        for r in idx[key]["rows"]:
+            if not r or not is_active_row(key, r):
+                continue
+            toks = row_tokens(r)
+            text = " ".join(r)
+            if "cron" in text.lower() and cron:
+                continue  # crontab-based row and the crontab is not empty: lines are matched above
+            found = any(t in live_names for t in toks) or any(t and t in " ".join(cron) for t in toks)
+            if not found and not toks:
+                results.append(("INFO", "unchecked", "row '%s' has no unit/file name I can look for" % mc.truncate(r[0], 40)))
+            elif not found:
+                results.append(("WARN", "MISSING", "active row '%s' has no live counterpart (looked for %s)" % (mc.truncate(r[0], 40), ", ".join(sorted(toks)[:3]))))
+                proposals.append("review row '%s': it is marked active but nothing live matches; set it to removed or recreate the unit" % r[0])
+    if not results:
+        results.append(("OK", "services", "nothing custom found and nothing indexed"))
+    worst = 0
+    for lv, what, det in results:
+        print(mc.status_line(lv, what, det))
+        if lv == "WARN":
+            worst = 1
+    if a.update:
+        print("")
+        if proposals:
+            print("proposed patch (v1 prints only; add the rows to inventory/%s/ by hand or via an agent):" % host)
+            for p in proposals:
+                print("+ " + p)
+        else:
+            print("proposed patch: none (the index already matches)")
+    elif worst:
+        print("\nnext: mach services --update   (prints a proposed patch)")
+    return worst
+
+
+if __name__ == "__main__":
+    sys.exit(main())

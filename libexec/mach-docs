@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# mach-summary: Update the per-machine docs-index CSVs (collect) or rebuild the xlsx workbook (build)
+# mach-group: upkeep
+# mach-subcommands: collect build macstat
+# mach-usage: mach docs [collect] [--apply]
+# mach-usage: mach docs build [--apply]
+# mach-usage: mach docs macstat [--apply]
+# mach-help: collect (default): runs the copied collector (libexec/mach-docs-collect.py, from staging/docs-index/collect.py)
+# mach-help: into a temp folder and shows which rows would be added, removed or changed in inventory/<host>/docs-index.csv.
+# mach-help: --apply writes the CSVs (after a backup and a rollback line). Collection runs on one machine only (single writer): [machines] collector, default this machine.
+# mach-help: State (births-seen.json, mac-stat.tsv) lives OUTSIDE machine-flows: ~/machine-flows-staging/docs-index/ (MACH_STATE_DIR).
+# mach-help: build: wraps scripts/docs-index-build.py. Plan 00 rule 10: the workbook is rebuilt ONLY when you run this explicitly.
+# mach-help: Preview builds into a temp file and reports the size; --apply replaces inventory/docs-index.xlsx (the script backs up the old one).
+# mach-help: macstat (Mac): runs the light stat gathering (mac-stat.sh) and, with --apply, saves mac-stat.tsv into the state folder for the collector machine.
+# mach-help: Personal history (purposes, dates, extra rows) comes from a gitignored docs-history.local.py ($MACH_DOCS_HISTORY, then
+# mach-help: $MACH_CONFIG_DIR, service-settings/mach/, config/); without one only the generic walk runs. Format: config/docs-history.example.py.
+# mach-help: Override the collector with MACH_DOCS_COLLECT (tests).
+set -u
+MACH_HOME=${MACH_HOME:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# shellcheck source=/dev/null
+. "$MACH_HOME/lib/common.sh"
+
+SUB="collect"; APPLY=0; YES=0
+case "${1:-}" in collect|build|macstat) SUB=$1; shift ;; esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply) APPLY=1 ;;
+    --yes|-y) YES=1 ;;
+    --dry-run) ;;
+    *) die "unknown option: $1 (try: mach docs --help)" ;;
+  esac
+  shift
+done
+
+PY=$(mach_python) || die "python3 >= 3.9 is required"
+HOST=$(mach_host)
+
+want_apply() {
+  [ "$APPLY" = 1 ] || [ "$YES" = 1 ] && return 0
+  if [ -t 0 ] && [ -t 1 ]; then
+    printf '%s [y/N] ' "$1"; read -r ans
+    case "$ans" in y|Y|yes|YES) return 0 ;; esac
+  fi
+  return 1
+}
+
+case "$SUB" in
+collect)
+  COLLECTOR=${MACH_DOCS_COLLECTOR:-$(mach_cfg machines.collector)}
+  COLLECTOR=${COLLECTOR:-$HOST}
+  if [ "$HOST" != "$COLLECTOR" ]; then
+    die "docs collect runs on $COLLECTOR only (single writer); this is $HOST. On the Mac use: mach docs macstat"
+  fi
+  MAC_NAME=$(mach_cfg machines.mac)
+  COLLECT_HOSTS="$COLLECTOR $MAC_NAME"
+  export MACH_DOCS_LINUX="$COLLECTOR" MACH_DOCS_MAC="${MAC_NAME:-mac}"
+  SCRIPT=${MACH_DOCS_COLLECT:-$MACH_HOME/libexec/mach-docs-collect.py}
+  [ -f "$SCRIPT" ] || die "collector not found: $(mach_tilde "$SCRIPT")"
+  TMP=$(mach_mktemp_dir) || die "cannot create a temp dir"
+  trap 'case "$TMP" in */mach.*) rm -rf "$TMP" ;; esac' EXIT
+  info "collecting docs index into a temp folder (nothing is written yet)"
+  MACH_DOCS_OUT="$TMP" "$PY" "$SCRIPT" --preview >"$TMP/collect.out" 2>"$TMP/collect.err" || { err "collector failed:"; sed 's/^/  /' "$TMP/collect.err" >&2; exit "$MACH_EXIT_FAIL"; }
+  grep '^INFO' "$TMP/collect.err" >&2 || true   # e.g. "no docs-history.local.py found"
+  DIFFS=0
+  for h in $COLLECT_HOSTS; do
+    NEW="$TMP/$h/docs-index.csv"; OLD="$MACH_MF_ROOT/inventory/$h/docs-index.csv"
+    [ -f "$NEW" ] || continue
+    printf '%s:\n' "inventory/$h/docs-index.csv"
+    "$PY" "$MACH_HOME/lib/csvdiff.py" "$OLD" "$NEW" | sed 's/^/  /'
+    [ "${PIPESTATUS[0]}" = 0 ] || DIFFS=$((DIFFS + 1))
+  done
+  if [ "$DIFFS" = 0 ]; then ok "docs index is up to date"; exit 0; fi
+  if ! want_apply "Write the updated CSVs?"; then
+    printf 'preview only: run again with --apply to write the CSVs (backup + rollback line first)\n'
+    exit 0
+  fi
+  mach_bk_init docs
+  for h in $COLLECT_HOSTS; do
+    [ -f "$TMP/$h/docs-index.csv" ] || continue
+    mkdir -p "$MACH_MF_ROOT/inventory/$h"
+    if [ -e "$MACH_MF_ROOT/inventory/$h/docs-index.csv" ]; then mach_bk_copy "$MACH_MF_ROOT/inventory/$h/docs-index.csv"; else mach_bk_created "$MACH_MF_ROOT/inventory/$h/docs-index.csv"; fi
+  done
+  MACH_DOCS_NO_BACKUP=1 "$PY" "$SCRIPT" || die "collector failed during --apply (restore with the rollback line below)"
+  mach_bk_finish
+  ok "docs index written; the workbook is NOT rebuilt (run: mach docs build, only if you want it)"
+  ;;
+build)
+  SCRIPT="$MACH_MF_ROOT/scripts/docs-index-build.py"
+  [ -f "$SCRIPT" ] || die "not found: $(mach_tilde "$SCRIPT")"
+  CSVS=""
+  for f in "$MACH_MF_ROOT"/inventory/*/docs-index.csv; do [ -f "$f" ] && CSVS="$CSVS $f"; done
+  [ -n "$CSVS" ] || die "no inventory/*/docs-index.csv files to build from"
+  VENV_PY="$MACH_STAGING/venv/bin/python3"
+  if ! "$PY" -c 'import openpyxl' 2>/dev/null && [ -x "$VENV_PY" ] && "$VENV_PY" -c 'import openpyxl' 2>/dev/null; then
+    PY=$VENV_PY   # the venv the build script's own docstring recommends
+  fi
+  if [ -z "${MACH_SKIP_OPENPYXL_CHECK:-}" ] && ! "$PY" -c 'import openpyxl' 2>/dev/null; then
+    err "openpyxl is missing for $PY. Create a venv once:"
+    err "  python3 -m venv ~/machine-flows-staging/venv && ~/machine-flows-staging/venv/bin/pip install openpyxl"
+    exit "$MACH_EXIT_FAIL"
+  fi
+  OUT="$MACH_MF_ROOT/inventory/docs-index.xlsx"
+  if ! want_apply "Rebuild $(mach_tilde "$OUT") now?"; then
+    TMP=$(mach_mktemp_dir) || die "cannot create a temp dir"
+    # shellcheck disable=SC2086
+    "$PY" "$SCRIPT" --out "$TMP/docs-index.xlsx" $CSVS >"$TMP/build.out" 2>&1 || { err "build failed:"; sed 's/^/  /' "$TMP/build.out" >&2; rm -rf "$TMP"; exit "$MACH_EXIT_FAIL"; }
+    NEWSZ=$(wc -c <"$TMP/docs-index.xlsx" | tr -d ' ')
+    OLDSZ=0; [ -f "$OUT" ] && OLDSZ=$(wc -c <"$OUT" | tr -d ' ')
+    rm -rf "$TMP"
+    printf 'preview: the workbook builds fine (%s bytes; current file: %s bytes)\n' "$NEWSZ" "$OLDSZ"
+    printf 'preview only: run again with --apply to rebuild inventory/docs-index.xlsx (rule 10: only when you ask)\n'
+    exit 0
+  fi
+  # shellcheck disable=SC2086
+  "$PY" "$SCRIPT" --out "$OUT" $CSVS || die "build failed"
+  ok "rebuilt $(mach_tilde "$OUT") (the script backed up the previous workbook under the staging backups)"
+  ;;
+macstat)
+  if ! mach_is_mac; then die "macstat gathers Mac facts and only runs on macOS (this is $(mach_os))"; fi
+  OUTF="$MACH_STATE_DIR/mac-stat.tsv"
+  MACH_MAC_NAME=$(mach_cfg machines.mac); MACH_MACSTAT_PATHS=$(mach_cfg docs.macstat_paths)
+  MACH_MACSTAT_CRON_PATTERN=$(mach_cfg docs.macstat_cron_pattern)
+  export MACH_MAC_NAME MACH_MACSTAT_PATHS MACH_MACSTAT_CRON_PATTERN
+  if want_apply "Save mac-stat.tsv to $(mach_tilde "$OUTF")?"; then
+    mkdir -p "$MACH_STATE_DIR"
+    bash "$MACH_HOME/libexec/mach-docs-macstat.sh" >"$OUTF" || die "mac-stat failed"
+    ok "saved $(mach_tilde "$OUTF") (outside machine-flows; copy it to the collector machine's state folder for the next collect)"
+  else
+    bash "$MACH_HOME/libexec/mach-docs-macstat.sh" | head -n 20
+    printf '... (preview of the first lines) run with --apply to save mac-stat.tsv\n'
+  fi
+  ;;
+esac

@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+# mach-summary: Approve a run that is waiting at a gate and continue it
+# mach-group: gateway
+# mach-writes: yes
+# mach-flag: --step | gate step number to approve (numbers are shown in the run steps table) | the next waiting gate
+# mach-usage: mach approve <id> [--step N] [--json]
+# mach-help: <id> may be a unique prefix. Only runs with status waiting-approval can be approved.
+# mach-help: Flows continue from the gate step (--step N must match the pending gate). Prompt runs continue past
+# mach-help: their before-run / apply / outward gate. An approved outward step still only writes a handoff file.
+# mach-help: Exit codes follow the run: 0 done, 2 failure, 3 if the run reaches another gate.
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+import mach_exec as ex  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach approve", add_help=False)
+    ap.add_argument("id")
+    ap.add_argument("--step", type=int)
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    js = a.json or mc.env_flag("MACH_JSON")
+    try:
+        run = mr.find_run(a.id, cfg)
+    except ValueError as exc:
+        mc.die(str(exc))
+    if run is None:
+        mc.die("no run matches %r (see: mach status)" % a.id)
+    if run.meta.get("writer") and run.meta.get("writer") != mc.host():
+        mc.eprint("mach: note: run %s was created on %s; approving it here changes a record that machine owns" % (run.id, run.meta.get("writer")))
+    return ex.approve_run(run, cfg, ex.Reporter(js), step=a.step, json_mode=js)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

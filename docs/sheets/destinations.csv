@@ -1,0 +1,13 @@
+dest_syntax,kind,how_delivered
+claude,role/ai-tool,"headless CLI run in the unit working folder, read-only unless --write; one run record"
+codex,role/ai-tool,"headless CLI run in the unit working folder, read-only unless --write; one run record"
+cursor-agent,role/ai-tool,"headless CLI run in the unit working folder, read-only unless --write; one run record"
+grokcli-agent,role/ai-tool,"headless CLI run in the unit working folder, read-only unless --write; one run record"
+kiro,role/ai-tool,"headless CLI run in the unit working folder, read-only unless --write; one run record"
+user,role/person,"note captured to the manifest note_dest (default inbox), tagged with the subsystem and unit"
+grokbot:<Service>,role/chat-bot,POST to the Grok Bot router webhook with secrets from the unsynced local file; without safe credentials a paste-ready queued run
+note:<dest>,role/note,"note captured to the named mach note destination, tagged with the subsystem and unit"
+mach note inbox,note/file,appended to the dated Markdown file under files/inbox/notes in machine-flows
+mach note agenda,note/app,"macOS Agenda: MCP tools/call create_note, then the URL scheme; else the outbox (exit 1)"
+mach note drafts,note/app,"macOS Drafts: the drafts CLI, then the URL scheme; else the outbox (exit 1)"
+mach note <name>,note/named,"a [note.dest.<name>] table in config with type file, inbox, agenda or drafts"

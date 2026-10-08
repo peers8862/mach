@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# mach-summary: Render (dry-run) or apply the MCP server manifest for each tool via scripts/mcp-apply.sh
+# mach-group: upkeep
+# mach-subcommands: render apply
+# mach-status: working apply=stub
+# mach-usage: mach mcp [render] [--tool T]
+# mach-usage: mach mcp apply [--tool T] [--apply]
+# mach-help: Tools: claude, codex, cursor-agent, kiro (also grokbot, the account-level Grok Bot notes). Default: all tools.
+# mach-help: render prints what scripts/mcp-apply.sh would change (its dry-run) and changes nothing.
+# mach-help: apply shows that preview first and passes --apply through only when you give --apply (or answer y on a tty).
+# mach-help: NOTE: mcp-apply.sh --apply is currently a documented stub that exits 3 without changing anything; mach reports it
+# mach-help: as "not implemented yet" (exit 1) instead of pretending it applied. grokcli-agent has no MCP target in mcp-apply.sh.
+# mach-help: Source of truth: ~/machine-flows/mcp/servers.yaml. Secrets are never printed (variable names only).
+set -u
+MACH_HOME=${MACH_HOME:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# shellcheck source=/dev/null
+. "$MACH_HOME/lib/common.sh"
+
+SUB="render"; TOOL="all"; APPLY=0; YES=0
+case "${1:-}" in render|apply) SUB=$1; shift ;; esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tool) [ $# -ge 2 ] || die "--tool needs a value"; TOOL=$2; shift ;;
+    --apply) APPLY=1 ;;
+    --yes|-y) YES=1 ;;
+    --dry-run) ;;
+    *) die "unknown option: $1 (try: mach mcp --help)" ;;
+  esac
+  shift
+done
+
+SCRIPT="$MACH_MF_ROOT/scripts/mcp-apply.sh"
+[ -f "$SCRIPT" ] || die "not found: $(mach_tilde "$SCRIPT")"
+
+case "$TOOL" in
+  all|claude|codex|kiro|grokbot) SCRIPT_TOOL=$TOOL ;;
+  cursor-agent|cursor) SCRIPT_TOOL=cursor ;;
+  grokcli-agent) info "grokcli-agent: mcp-apply.sh has no MCP target for the grok CLI (nothing to render)"; exit 0 ;;
+  *) die "unknown tool '$TOOL' (use claude, codex, cursor-agent, kiro, grokbot)" ;;
+esac
+
+info "mcp-apply.sh dry-run for tool: $TOOL on $(mach_host)"
+bash "$SCRIPT" --tool "$SCRIPT_TOOL" --machine "$(mach_host)"
+RC=$?
+if [ "$RC" -ge 2 ]; then err "mcp-apply.sh failed (exit $RC)"; exit "$MACH_EXIT_FAIL"; fi
+
+if [ "$SUB" = "render" ]; then exit "$MACH_EXIT_OK"; fi
+
+DO=0
+if [ "$APPLY" = 1 ] || [ "$YES" = 1 ]; then DO=1
+elif [ -t 0 ] && [ -t 1 ]; then
+  printf 'Apply the changes above? [y/N] '; read -r ans
+  case "$ans" in y|Y|yes|YES) DO=1 ;; esac
+fi
+if [ "$DO" = 0 ]; then
+  printf 'preview only: run again with --apply to pass --apply to mcp-apply.sh\n'
+  exit "$MACH_EXIT_OK"
+fi
+
+bash "$SCRIPT" --tool "$SCRIPT_TOOL" --machine "$(mach_host)" --apply
+RC=$?
+case "$RC" in
+  0) ok "mcp-apply.sh applied the changes"; exit 0 ;;
+  3) warn "mcp-apply.sh --apply is a documented stub (not implemented): nothing was changed. Apply the printed commands by hand."; exit "$MACH_EXIT_WARN" ;;
+  *) err "mcp-apply.sh --apply exited $RC"; exit "$MACH_EXIT_FAIL" ;;
+esac

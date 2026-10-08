@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+# mach-summary: Manage subsystem manifests and send prompts to unit roles
+# mach-group: gateway
+# mach-subcommands: list show lint new unit role
+# mach-writes: yes list=no show=no lint=no
+# mach-flag: --from | setup draft file to ingest (see ai-authored/templates) | none
+# mach-flag: --replace | replace an existing manifest | off
+# mach-flag: --role | role to address | lead
+# mach-flag: --to | explicit destination, overrides the role | the role destination
+# mach-flag: --roles | list the unit roles and service profiles instead of sending | off
+# mach-flag: --reply | where the reply goes | manifest delivery.reply (chat)
+# mach-usage: mach subsystem list|show <id>|lint [id]|new <id> [--from D] [--apply] [--replace]
+# mach-usage: mach subsystem unit|role <id> --from D [--apply]
+# mach-usage: mach <subsystem> [unit] [prompt] [--role R|--to D] [--roles] [--reply chat|inbox] [--write] [--force] [--dry-run] [--json]
+# mach-help: A subsystem is a keyed TOML manifest in machine-flows/subsystems/<id>/subsystem.toml.
+# mach-help: Unit sends execute immediately. Grok Bot uses a router webhook when private secrets are safe; otherwise it queues a paste-ready prompt.
+# mach-help: `new`, `unit` and `role` preview changes; --apply writes with a staging backup. Lint exits 2 for FAIL, 1 for WARN.
+import argparse
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+import urllib.parse
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get('MACH_HOME') or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lib'))
+import mach_common as mc
+import mach_subsystem as ss
+import mach_runs as mr
+import mach_exec as ex
+import mach_note as mn
+
+
+def emit(obj, js):
+    if js: mc.emit_json(obj)
+    else: print(obj if isinstance(obj, str) else json.dumps(obj, indent=2))
+
+
+def manifest(sid):
+    try: return ss.load(sid)
+    except (OSError, ValueError) as e: mc.die('subsystem %s: %s' % (sid, e))
+
+
+def check(sid, js=False):
+    try: data = ss.load(sid); results = ss.lint(data, sid)
+    except (OSError, ValueError) as e: results = [('FAIL', str(e))]
+    if not results: results = [('OK', 'manifest valid')]
+    if js: mc.emit_json({'id': sid, 'results': [{'level': x, 'message': y} for x,y in results]})
+    else:
+        for lv, msg in results: print('%s %s: %s' % (lv, sid, msg))
+    return 2 if any(x == 'FAIL' for x,_ in results) else 1 if any(x == 'WARN' for x,_ in results) else 0
+
+
+def admin(args):
+    ap = argparse.ArgumentParser(prog='mach subsystem')
+    ap.add_argument('verb', choices=['list','show','lint','new','unit','role'])
+    ap.add_argument('id', nargs='?')
+    ap.add_argument('--from', dest='source')
+    ap.add_argument('--apply', action='store_true')
+    ap.add_argument('--replace', action='store_true')
+    ap.add_argument('--json', action='store_true')
+    a = ap.parse_args(args)
+    js = a.json or mc.env_flag('MACH_JSON')
+    if a.verb == 'list':
+        rows = [{'id': sid, 'name': manifest(sid).get('name','')} for sid in ss.ids()]
+        emit(rows if js else '\n'.join('%s  %s' % (r['id'], r['name']) for r in rows), js); return 0
+    if a.verb == 'lint':
+        ids = [a.id] if a.id else ss.ids()
+        return max([check(sid, js) for sid in ids] or [0])
+    if not a.id or not ss.ID.fullmatch(a.id): mc.die('expected lowercase kebab subsystem id')
+    sid = a.id
+    if a.verb == 'show': emit(manifest(sid), js); return 0
+    if a.verb == 'new':
+        if a.source:
+            d = ss.draft(mc.expand(a.source), 'subsystem-setup')
+            data = ss.from_setup(d)
+            if data.get('id') != sid: mc.die('draft id must match command id')
+            content = ss.render(data)
+        else:
+            src = os.path.join(ss.root(), '_template', 'subsystem.toml')
+            if not os.path.isfile(src): src = os.path.join(mc.mf_root(), 'subsystems', '_template', 'subsystem.toml')
+            content = open(src, encoding='utf-8').read().replace('id = "example"', 'id = "%s"' % sid)
+            data = ss.parse(content)
+        problems = ss.lint(data, sid)
+        if any(lv == 'FAIL' for lv,_ in problems):
+            for lv,msg in problems: print('%s %s' % (lv,msg), file=sys.stderr)
+            return 2
+        target = ss.path(sid)
+        if os.path.exists(target) and not a.replace: mc.die('manifest exists; use --replace')
+        if not a.apply: emit(content, js); return 0
+        backup_write(target, ingested(content, a.source) if a.source else content, os.path.exists(target))
+        emit('wrote ' + target, js); return 0
+    if not a.source: mc.die('--from <draft.md> is required')
+    target = ss.path(sid)
+    original = open(target, encoding='utf-8').read()
+    data = ss.parse(original)
+    if a.verb == 'unit':
+        d = ss.draft(mc.expand(a.source), 'unit-setup')
+        if d.meta.get('subsystem') != sid: mc.die('draft subsystem must match command id')
+        uid = d.meta.get('unit')
+        if not uid or not ss.ID.fullmatch(uid): mc.die('draft needs a valid unit id')
+        blocks = ss.section_blocks(d.body)
+        if len(blocks) != 1 or blocks[0][:2] != ('unit', uid): mc.die('unit draft needs exactly one matching ## Unit: heading')
+        unit = ss.unit_from(blocks[0][2]); new = ss.update_unit(original, uid, unit)
+    else:
+        d = ss.draft(mc.expand(a.source), 'role-change')
+        m = d.meta
+        if m.get('subsystem') != sid: mc.die('draft subsystem must match command id')
+        uid, role, dest = m.get('unit'), m.get('role'), m.get('to')
+        if uid not in data.get('units', {}) or not re.fullmatch(r'[a-z][a-z0-9-]*', str(role)) or not ss.dest_ok(dest): mc.die('invalid unit, role or destination')
+        roles = dict(data['units'][uid].get('roles', {})); old = roles.get(role, '(none)')
+        roles[role] = dest
+        roles['changed'] = list(roles.get('changed', [])) + ['%s %s: %s -> %s (%s)' % (m.get('date'), role, old, dest, m.get('reason'))]
+        new = ss.replace_block(original, 'units.' + uid + '.roles', ss.render_table('units.' + uid + '.roles', roles))
+    issues = ss.lint(ss.parse(new), sid)
+    if any(lv == 'FAIL' for lv,_ in issues):
+        for lv,msg in issues: print('%s %s' % (lv,msg), file=sys.stderr)
+        return 2
+    if not a.apply: emit(ss.diff(original, new, target), js); return 0
+    backup_write(target, ingested(new, a.source), True); emit('updated ' + target, js); return 0
+
+
+def ingested(text, source):
+    digest = hashlib.sha256(open(mc.expand(source), 'rb').read()).hexdigest()
+    marker = '# mach-ingested-sha256: ' + digest
+    return text if marker in text else text.rstrip() + '\n' + marker + '\n'
+
+
+def backup_write(path, content, exists):
+    b = mc.Backup('subsystem')
+    if exists: b.save(path)
+    else: b.created(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    mc.write_text(path, content)
+    b.finish()
+
+
+def secrets():
+    p = mc.expand(os.environ.get('MACH_SECRETS_FILE') or '~/.config/mach/secrets.toml')
+    try:
+        mode = stat.S_IMODE(os.stat(p).st_mode)
+        if mode & 0o077: return None, '%s is unsafe; chmod 600 %s' % (p,p)
+        data = ss.parse(open(p,encoding='utf-8').read()).get('grokbot_router', {})
+        if not data.get('url') or not data.get('key'): return None, 'missing [grokbot_router] url or key in ' + p
+        u = urllib.parse.urlsplit(data['url'])
+        if u.scheme not in ('http','https') or not u.hostname: return None, 'invalid router URL in ' + p
+        return data, ''
+    except OSError: return None, 'missing ' + p
+    except ValueError: return None, 'invalid TOML in ' + p
+
+
+def header(key_header, key):
+    h = (key_header or 'Authorization: Bearer').strip()
+    if ':' in h:
+        name, prefix = h.split(':', 1)
+        return name + ': ' + (prefix.strip() + ' ' if prefix.strip() else '') + key
+    return h.rstrip(':') + ': ' + key
+
+
+def curl_config(url, hdr, payload):
+    def q(s): return '"' + s.replace('\\','\\\\').replace('"','\\"').replace('\n','\\n') + '"'
+    return 'url = %s\nrequest = "POST"\nheader = "Content-Type: application/json"\nheader = %s\ndata = %s\n' % (q(url), q(hdr), q(json.dumps(payload, separators=(',',':'))))
+
+
+def send(sid, argv):
+    a = argparse.ArgumentParser(prog='mach ' + sid)
+    a.add_argument('words', nargs='*'); a.add_argument('--to'); a.add_argument('--role'); a.add_argument('--roles',action='store_true')
+    a.add_argument('--dry-run',action='store_true'); a.add_argument('--json',action='store_true'); a.add_argument('--write',action='store_true')
+    a.add_argument('--reply',choices=['chat','inbox']); a.add_argument('--force',action='store_true'); a.add_argument('--source')
+    opts = a.parse_intermixed_args(argv)
+    js = opts.json or mc.env_flag('MACH_JSON'); dry = opts.dry_run or mc.env_flag('MACH_DRY_RUN')
+    data = manifest(sid)
+    if any(l == 'FAIL' for l,_ in ss.lint(data,sid)): mc.die('manifest failed lint')
+    units = data.get('units', {})
+    if not opts.words:
+        rows = [{'id': k, 'name': v.get('name',k), 'parent': v.get('parent',''), 'kind': v.get('kind'), 'lead': v.get('roles',{}).get('lead','')} for k,v in units.items()]
+        if js: emit(rows, True)
+        else:
+            def walk(parent, depth=0):
+                for r in rows:
+                    if r['parent'] == parent:
+                        print('  '*depth + '%s (%s) → %s' % (r['id'],r['kind'],r['lead'] or '-')); walk(r['id'], depth+1)
+            walk('')
+        return 0
+    uid = opts.words[0].split('/')[-1]
+    if uid not in units: mc.die('unknown unit %s' % uid)
+    u = units[uid]; roles = u.get('roles', {})
+    if opts.roles:
+        profiles = {d:data.get('services',{}).get(d,{}) for k,d in roles.items() if k not in ss.ROLE_META and isinstance(d,str)}
+        emit({'roles':roles,'profiles':profiles},js); return 0
+    role = opts.role or 'lead'; dest = opts.to or roles.get(role)
+    if not ss.dest_ok(dest): mc.die('role %s has no valid destination' % role)
+    prompt = ' '.join(opts.words[1:]).strip()
+    if prompt in ('','-') and not sys.stdin.isatty(): prompt = sys.stdin.read().strip()
+    if not prompt: mc.die('prompt is empty')
+    cfg = mc.load_config_or_warn(); work = mc.expand(data.get('working_root',''))
+    if u.get('repo'): work = mc.expand(data.get('repos',{}).get(u['repo'],{}).get('path',work))
+    context = 'Subsystem: %s (%s)\nUnit: %s (%s)\nRole: %s\nWorking root: %s\n\n' % (data.get('name',sid),sid,u.get('name',uid),u.get('kind',''),role,mc.tilde(work))
+    full = context + prompt
+    reply = opts.reply or data.get('delivery',{}).get('reply','chat')
+    if dest.startswith('grokbot:'):
+        maxfires = data.get('delivery',{}).get('max_fires_per_day',20)
+        today = mc.now().strftime('%Y-%m-%d')
+        fires = sum(1 for r in mr.list_runs(cfg) if r.meta.get('subsystem') == sid and r.meta.get('delivery') == 'grokbot-router' and str(r.meta.get('created','')).startswith(today))
+        if fires >= maxfires and not opts.force: mc.die('daily Grok Bot cap reached (%d); use --force' % maxfires)
+        secret, why = secrets()
+        host = urllib.parse.urlsplit(secret['url']).hostname if secret else None
+        if dry:
+            payload = {'subsystem':sid,'unit':uid,'dest':dest,'role':role,'prompt':full,'host':mc.host(),'run_id':'<run_id>','reply':reply if reply=='chat' else 'files/inbox/replies/<run_id>.md'}
+            emit({'delivery':'grokbot-router' if secret else 'paste-ready fallback','url_host':host,'key':'<redacted>','payload':payload,'reason':why or None},js); return 0
+        if not secret:
+            print(why + '; configure [grokbot_router] url, key, key_header in %s; chmod 600 %s; copy URL and key from the routine panel of \'mach router: forward prompts to pillar bots\'' % (mc.expand(os.environ.get('MACH_SECRETS_FILE') or '~/.config/mach/secrets.toml'),mc.expand(os.environ.get('MACH_SECRETS_FILE') or '~/.config/mach/secrets.toml')))
+            run = mr.new_run(cfg,kind='subsystem-prompt',title=prompt,tool='grokbot',path=work,input_text=full,status='queued',extra={'subsystem':sid,'unit':uid,'role':role,'dest':dest,'delivery':'paste-ready','source':opts.source or ''})
+            mc.write_text(run.path_of('prompt-for-grokbot.md'),full+'\n'); run.add_output('prompt-for-grokbot.md'); run.note('paste-ready fallback'); run.save()
+            emit({'id':run.id,'status':'queued','prompt_file':mc.tilde(run.path_of('prompt-for-grokbot.md'))} if js else 'paste-ready prompt: ' + mc.tilde(run.path_of('prompt-for-grokbot.md')),js)
+            return 1
+        run = mr.new_run(cfg,kind='subsystem-prompt',title=prompt,tool='grokbot',path=work,input_text=full,status='running',extra={'subsystem':sid,'unit':uid,'role':role,'dest':dest,'delivery':'grokbot-router','url_host':host,'source':opts.source or ''})
+        payload = {'subsystem':sid,'unit':uid,'dest':dest,'role':role,'prompt':full,'host':mc.host(),'run_id':run.id,'reply':reply if reply=='chat' else 'files/inbox/replies/%s.md' % run.id}
+        try:
+            p = subprocess.run([mc.cmd('curl'),'-K','-','--max-time','20','--silent','--show-error','--write-out','\n%{http_code}'],input=curl_config(secret['url'],header(secret.get('key_header'),secret['key']),payload),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=22)
+            body, status = p.stdout.rsplit('\n',1) if '\n' in p.stdout else ('', '000')
+            ok = p.returncode == 0 and status.isdigit() and 200 <= int(status) < 300
+        except (OSError,subprocess.TimeoutExpired): body,status,ok = '', '000',False
+        run.meta['http_status'] = status
+        receipt = body.replace(secret['key'], '<redacted>').replace(secret['url'], '<redacted>')
+        receipt = re.sub(r'[^\w .<>-]','',receipt)[:100]
+        if ok:
+            run.note('delivered to router; receipt: ' + receipt); run.set_status('done')
+            emit({'id':run.id,'status':'done','http_status':status} if js else 'delivered to router (run %s, HTTP %s)' % (run.id,status),js); return 0
+        run.note('router failed; redacted receipt: ' + receipt); run.set_status('failed')
+        emit({'id':run.id,'status':'failed','http_status':status,'receipt':receipt} if js else 'router failed (HTTP %s): %s' % (status,receipt),js); return 2
+    if dry:
+        if dest in mc.KNOWN_TOOLS:
+            cmd,pidx,_ = mc.tool_argv(dest,full,write=opts.write,cfg=cfg)
+            emit({'dest':dest,'command':mc.shown_cmd(cmd,pidx),'prompt':full} if js else 'dry-run: ' + mc.shown_cmd(cmd,pidx) + '\n' + full,js)
+        else: emit({'dest':dest,'prompt':full} if js else 'dry-run: note to %s, tags [%s, %s]\n%s' % (dest,sid,uid,full),js)
+        return 0
+    run = mr.new_run(cfg,kind='subsystem-prompt',title=prompt,tool=dest,path=work,input_text=full,status='running',extra={'subsystem':sid,'unit':uid,'role':role,'dest':dest,'delivery':'cli' if dest in mc.KNOWN_TOOLS else 'note','source':opts.source or ''})
+    if dest in mc.KNOWN_TOOLS:
+        if not mc.tool_available(dest,cfg): run.set_status('failed'); mc.die('%s is unavailable' % dest)
+        rc,_,out = ex.exec_ai(run,1,dest,full,work,opts.write,cfg,stream=not js)
+        run.add_output(out)
+        run.set_status('done' if rc == 0 else 'failed')
+        emit({'id':run.id,'status':run.status} if js else 'run %s: %s' % (run.id,run.status),js); return 0 if rc == 0 else 2
+    ndest = data.get('note_dest','inbox') if dest == 'user' else dest.split(':',1)[1]
+    try: res = mn.capture(cfg,ndest,mn.Note(full,title='%s / %s' % (sid,uid),tags=[sid,uid]))
+    except mn.NoteError as e: run.set_status('failed'); mc.die(str(e))
+    run.meta['delivery'] = res['method']; run.note(res['message']); run.set_status('done' if res['exit']==0 else 'queued')
+    emit({'id':run.id,'status':run.status,'note':res['message']} if js else res['message'],js); return res['exit']
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(send(sys.argv[2],sys.argv[3:]) if len(sys.argv)>2 and sys.argv[1]=='dispatch' else admin(sys.argv[1:]))
+    except (ValueError,OSError) as e:
+        mc.eprint('mach: subsystem: ' + str(e)); sys.exit(2)

@@ -1,0 +1,453 @@
+file,function,language,purpose
+lib/common.sh,mach_home_dir,bash,directory of the mach checkout (set by bin/mach; derive it if sourced directly)
+lib/common.sh,mach_host,bash,MACH_HOST overrides; else the python helper (short hostname mapped by [machines.match] in the config); else the short hostname
+lib/common.sh,mach_cfg,bash,mach_cfg <dotted.key>: one config value (lists print one item per line); empty when unset or when python is missing
+lib/common.sh,mach_os,bash,MACH_OS overrides (tests): darwin | linux
+lib/common.sh,mach_is_mac,bash,
+lib/common.sh,mach_tilde,bash,
+lib/common.sh,ok,bash,
+lib/common.sh,warn,bash,
+lib/common.sh,fail,bash,
+lib/common.sh,info,bash,
+lib/common.sh,err,bash,
+lib/common.sh,die,bash,
+lib/common.sh,mach_flag_on,bash,--- flags shared by commands ----------------------------------------------
+lib/common.sh,mach_mktemp_dir,bash,"--- temp dirs (under staging, never /tmp unless staging is unusable) ------"
+lib/common.sh,mach_bk_init,bash,
+lib/common.sh,mach_bk_copy,bash,back up an existing regular file before it is changed
+lib/common.sh,mach_bk_created,bash,
+lib/common.sh,mach_bk_link,bash,record a symlink (and its target) that is about to be removed
+lib/common.sh,mach_bk_finish,bash,
+lib/common.sh,mach_shell_path,bash,mach_shell_path <path>: a path to paste into a shell. '~/…' stays unquoted (so it expands); the rest is %q-quoted.
+lib/common.sh,mach_python,bash,prefer a python3 >= 3.9; the Mac's /usr/bin/python3 is 3.9
+lib/csvdiff.py,load,python,
+lib/csvdiff.py,main,python,
+lib/frontmatter.py,machines,python,Valid values of the `machine` key: `any` plus the machine names from the config (and this machine).
+lib/frontmatter.py,ParsedDoc,python,
+lib/frontmatter.py,ParsedDoc.__init__,python,
+lib/frontmatter.py,ParsedDoc.ok,python,
+lib/frontmatter.py,strip_comment,python,Drop a trailing ` # comment` that is not inside quotes.
+lib/frontmatter.py,_unquote,python,
+lib/frontmatter.py,_split_list,python,
+lib/frontmatter.py,parse_value,python,Parse the text after `key:`. Returns a python value; raises ValueError on bad syntax.
+lib/frontmatter.py,parse_text,python,"Parse a document. nested=True (lesson files) tolerates one level of indented `child: value` lines,"
+lib/frontmatter.py,parse_file,python,
+lib/frontmatter.py,_check_enum,python,
+lib/frontmatter.py,_check_str,python,
+lib/frontmatter.py,validate,python,Validate doc.meta against the schema (plan 08 section 3.6). Adds to doc.errors / doc.warnings.
+lib/frontmatter.py,load_prompt_doc,python,
+lib/frontmatter.py,is_outward,python,
+lib/frontmatter.py,format_problems,python,
+lib/frontmatter.py,Step,python,
+lib/frontmatter.py,Step.__init__,python,
+lib/frontmatter.py,Step.as_dict,python,
+lib/frontmatter.py,Recipe,python,
+lib/frontmatter.py,Recipe.__init__,python,
+lib/frontmatter.py,Recipe.name,python,
+lib/frontmatter.py,parse_recipe_text,python,
+lib/frontmatter.py,parse_recipe_file,python,
+lib/mach_common.py,mach_home,python,
+lib/mach_common.py,version,python,
+lib/mach_common.py,home,python,
+lib/mach_common.py,expand,python,"Expand ~ using $HOME (not the passwd entry), so tests can redirect it."
+lib/mach_common.py,tilde,python,
+lib/mach_common.py,shell_path,python,"A path to paste into a shell: '~/…' stays unquoted so the shell expands it, the rest is quoted only if needed."
+lib/mach_common.py,_machines_layer,python,[machines] from the shared and local config layers only (the host layer is chosen by the host name itself).
+lib/mach_common.py,host,python,"This machine's name. MACH_HOST overrides; else the short hostname, mapped by [machines.match]"
+lib/mach_common.py,machine_names,python,"Known machine names: [machines] names, plus the match targets, plus this machine."
+lib/mach_common.py,mac_machine,python,Name of the macOS machine that delivers Agenda/Drafts notes ([machines] mac); '' when not configured.
+lib/mach_common.py,collector_machine,python,"Machine that runs `mach docs collect` (single writer): $MACH_DOCS_COLLECTOR, else [machines] collector, else this machine."
+lib/mach_common.py,is_mac,python,
+lib/mach_common.py,mf_root,python,
+lib/mach_common.py,staging,python,
+lib/mach_common.py,state_dir,python,"Docs-index state (births-seen.json, mac-stat.tsv): outside the synced folder."
+lib/mach_common.py,local_state_dir,python,
+lib/mach_common.py,log_dir,python,
+lib/mach_common.py,runs_dir,python,
+lib/mach_common.py,rel_to_mf,python,
+lib/mach_common.py,now,python,Local time; MACH_NOW='YYYY-MM-DD HH:MM[:SS]' pins it for tests.
+lib/mach_common.py,env_flag,python,
+lib/mach_common.py,mktemp_dir,python,"Temp dir under the staging area (unsynced, under ~), never /tmp, unless staging is unusable."
+lib/mach_common.py,use_color,python,
+lib/mach_common.py,paint,python,
+lib/mach_common.py,eprint,python,
+lib/mach_common.py,die,python,
+lib/mach_common.py,status_line,python,
+lib/mach_common.py,truncate,python,
+lib/mach_common.py,slugify,python,
+lib/mach_common.py,shown_cmd,python,Command as a shell-ish string with the prompt argument truncated.
+lib/mach_common.py,should_apply,python,"State changes preview by default: act with --apply (or --yes), or an interactive y on a tty."
+lib/mach_common.py,confirm,python,Ask on a tty; non-tty without --yes means no.
+lib/mach_common.py,_deep_merge,python,
+lib/mach_common.py,config_dir,python,
+lib/mach_common.py,config_files,python,
+lib/mach_common.py,Config,python,
+lib/mach_common.py,Config.__init__,python,
+lib/mach_common.py,Config.get,python,
+lib/mach_common.py,Config.section,python,
+lib/mach_common.py,load_config,python,
+lib/mach_common.py,load_config_or_warn,python,
+lib/mach_common.py,which,python,
+lib/mach_common.py,ext_cmd,python,The program mach runs for an outside tool: $<var> if set (tests point it into a sandbox; a path that does not exist
+lib/mach_common.py,cmd,python,"Resolved program for `name` (a key of CMD_VARS): the override variable, else the plain name."
+lib/mach_common.py,tool_argv,python,"Headless argv for each tool. Read-only by default. Returns (argv, prompt_index, note)."
+lib/mach_common.py,tool_binary_name,python,Program for an AI tool: env override (MACH_<TOOL>_CMD) > config tools.<tool>.command > the default name.
+lib/mach_common.py,tool_available,python,
+lib/mach_common.py,Backup,python,Backs files up to $MACH_STAGING/backups/<ts>-mach-<cmd>/ and writes a rollback script.
+lib/mach_common.py,Backup.__init__,python,
+lib/mach_common.py,Backup._ensure,python,
+lib/mach_common.py,Backup.save,python,Copy an existing file or symlink aside before it is changed or removed.
+lib/mach_common.py,Backup.created,python,
+lib/mach_common.py,Backup.created_dir,python,"A directory this run made: rollback uses rmdir, so it never removes anything added there later."
+lib/mach_common.py,Backup.finish,python,Write rollback.sh and return the one-line rollback hint.
+lib/mach_common.py,run_capture,python,"Run a command, capture output, never raise, never hang. Returns (rc, stdout, stderr)."
+lib/mach_common.py,read_text,python,
+lib/mach_common.py,write_text,python,
+lib/mach_common.py,emit_json,python,
+lib/mach_common.py,is_inside,python,
+lib/mach_common.py,peer_host,python,
+lib/mach_common.py,background_machine,python,"Where `machine: any` work runs: [queue] background_machine, else this machine."
+lib/mach_doctor.py,Ctx,python,
+lib/mach_doctor.py,Ctx.__init__,python,
+lib/mach_doctor.py,Ctx.time_left,python,
+lib/mach_doctor.py,Ctx.get,python,
+lib/mach_doctor.py,_count_syncthing_procs,python,Independent syncthing instances: Syncthing's monitor process and its child count as one.
+lib/mach_doctor.py,check_syncthing_service,python,
+lib/mach_doctor.py,_api_key_paths,python,
+lib/mach_doctor.py,_read_api_key,python,"Read the API key at runtime only. The caller must never print, log or store it."
+lib/mach_doctor.py,_rest,python,
+lib/mach_doctor.py,check_syncthing_state,python,
+lib/mach_doctor.py,_syncthing_version,python,
+lib/mach_doctor.py,check_syncthing_version,python,
+lib/mach_doctor.py,check_cli_names,python,
+lib/mach_doctor.py,split_md_row,python,Cells of one Markdown table row. `\|` and a `|` inside a backtick span do not split; `\|` is unescaped.
+lib/mach_doctor.py,parse_md_tables,python,"All pipe tables in the text: list of (header_cells, rows); separator rows dropped."
+lib/mach_doctor.py,is_main_table,python,"The services table: first column 'Name', a 'Status' column, and at least 5 columns (75: Name/Type/File path/…/Status)."
+lib/mach_doctor.py,parse_md_table_rows,python,Rows of the main services table only (header and separator rows dropped); other tables are ignored.
+lib/mach_doctor.py,other_md_tables,python,Headers of tables that parse_md_table_rows ignores (for reporting).
+lib/mach_doctor.py,check_services_index,python,
+lib/mach_doctor.py,_alive,python,
+lib/mach_doctor.py,_read_json,python,
+lib/mach_doctor.py,_epoch_seconds,python,
+lib/mach_doctor.py,check_grokbot,python,"Plan 07: reads ONLY local-exec-daemon.json, local-exec-supervisor.json and local-exec-daemon.log."
+lib/mach_doctor.py,check_disk,python,
+lib/mach_doctor.py,_linux_mem_available_mb,python,
+lib/mach_doctor.py,_mac_mem_available_mb,python,
+lib/mach_doctor.py,check_memory,python,
+lib/mach_doctor.py,check_peer,python,
+lib/mach_doctor.py,_secret_patterns,python,
+lib/mach_doctor.py,scan_tree,python,"One bounded walk of machine-flows: symlinks, secrets-guard filename matches, sync conflicts."
+lib/mach_doctor.py,_names,python,
+lib/mach_doctor.py,check_hygiene,python,
+lib/mach_doctor.py,_line_count,python,
+lib/mach_doctor.py,check_memory_caps,python,
+lib/mach_doctor.py,count_boxes,python,
+lib/mach_doctor.py,check_plans,python,
+lib/mach_doctor.py,check_outbox,python,
+lib/mach_doctor.py,check_runs,python,
+lib/mach_doctor.py,check_config,python,
+lib/mach_doctor.py,run_all,python,
+lib/mach_doctor.py,exit_code,python,
+lib/mach_exec.py,Reporter,python,"Human lines go to stdout, or to stderr when --json owns stdout."
+lib/mach_exec.py,Reporter.__init__,python,
+lib/mach_exec.py,Reporter.say,python,
+lib/mach_exec.py,git_root,python,
+lib/mach_exec.py,project_map_lookup,python,"Resolve a project id from service-memories/project-map.tsv (first column id, first path-like column)."
+lib/mach_exec.py,resolve_path,python,
+lib/mach_exec.py,route,python,"Decide tool, machine, working path and permission. Returns a dict with a `why` list."
+lib/mach_exec.py,show_route,python,
+lib/mach_exec.py,require_tool,python,
+lib/mach_exec.py,run_dir_rel,python,
+lib/mach_exec.py,exec_ai,python,
+lib/mach_exec.py,fill,python,
+lib/mach_exec.py,resolve_output,python,"Return (kind, path): kind is stdout | pr | linear-comment | file."
+lib/mach_exec.py,output_allowed,python,
+lib/mach_exec.py,unique_path,python,
+lib/mach_exec.py,write_output_file,python,
+lib/mach_exec.py,ticket_of,python,
+lib/mach_exec.py,make_handoff,python,Write a ready-to-run command or draft for an outward action. mach never executes it.
+lib/mach_exec.py,prompt_for,python,
+lib/mach_exec.py,plan_doc,python,
+lib/mach_exec.py,describe_plan,python,
+lib/mach_exec.py,source_label,python,
+lib/mach_exec.py,start_prompt_run,python,"Create the run record for a validated prompt document and (unless queued) execute it. Returns (run, exit)."
+lib/mach_exec.py,continue_prompt_run,python,Drive a prompt-document run through its stages and gates. Returns an exit code.
+lib/mach_exec.py,inbox_dir,python,
+lib/mach_exec.py,outbox_root,python,
+lib/mach_exec.py,inbox_items,python,Every prompt doc in files/inbox/prompts with its target machine and whether it already ran.
+lib/mach_exec.py,outbox_items,python,
+lib/mach_exec.py,load_recipe,python,
+lib/mach_exec.py,list_recipes,python,
+lib/mach_exec.py,next_plan_number,python,
+lib/mach_exec.py,flow_ctx,python,
+lib/mach_exec.py,describe_recipe,python,
+lib/mach_exec.py,start_flow,python,
+lib/mach_exec.py,continue_flow,python,
+lib/mach_exec.py,approve_run,python,
+lib/mach_exec.py,reject_run,python,
+lib/mach_note.py,NoteError,python,
+lib/mach_note.py,Note,python,
+lib/mach_note.py,Note.__init__,python,
+lib/mach_note.py,derive_title,python,
+lib/mach_note.py,split_tags,python,
+lib/mach_note.py,known_dests,python,
+lib/mach_note.py,resolve_dest,python,"Return (type, settings dict) for a destination name."
+lib/mach_note.py,entry_markdown,python,
+lib/mach_note.py,with_hash_tags,python,
+lib/mach_note.py,inbox_path,python,
+lib/mach_note.py,append_entry,python,
+lib/mach_note.py,deliver_file,python,
+lib/mach_note.py,_post,python,
+lib/mach_note.py,_json_from_body,python,
+lib/mach_note.py,agenda_mcp_url,python,Agenda's local MCP endpoint: $MACH_AGENDA_MCP_URL > the destination's `mcp_url` setting > Agenda's usual localhost port.
+lib/mach_note.py,agenda_mcp,python,"Create a note through Agenda's built-in MCP server (localhost, no token). Raises NoteError on any failure."
+lib/mach_note.py,agenda_url,python,
+lib/mach_note.py,drafts_body,python,
+lib/mach_note.py,drafts_url,python,
+lib/mach_note.py,drafts_cli,python,
+lib/mach_note.py,run_open,python,
+lib/mach_note.py,run_drafts_cli,python,
+lib/mach_note.py,try_methods,python,"Try each method in order. Returns (method_used, index_used, failures). Raises NoteError if all fail."
+lib/mach_note.py,outbox_file,python,
+lib/mach_note.py,write_outbox,python,
+lib/mach_note.py,read_outbox,python,
+lib/mach_note.py,log_note,python,"Local log: time, destination, method only. Never the text."
+lib/mach_note.py,capture,python,"Capture a note. Returns a result dict: dest, type, method, status (noted|queued), path, exit, message."
+lib/mach_note.py,flush,python,"Deliver outbox files (macOS). Preview unless apply. Returns (lines, exit_code)."
+lib/mach_runs.py,fm_value,python,
+lib/mach_runs.py,fm_scalar,python,
+lib/mach_runs.py,Run,python,
+lib/mach_runs.py,Run.__init__,python,
+lib/mach_runs.py,Run.id,python,---- identity
+lib/mach_runs.py,Run.status,python,
+lib/mach_runs.py,Run.path_of,python,
+lib/mach_runs.py,Run.render,python,---- persistence
+lib/mach_runs.py,Run.save,python,
+lib/mach_runs.py,Run.set_status,python,---- mutation helpers
+lib/mach_runs.py,Run.note,python,
+lib/mach_runs.py,Run.add_output,python,
+lib/mach_runs.py,Run.step,python,
+lib/mach_runs.py,Run.set_step,python,
+lib/mach_runs.py,_parse_run,python,
+lib/mach_runs.py,load_run,python,
+lib/mach_runs.py,_iter_run_dirs,python,
+lib/mach_runs.py,list_runs,python,
+lib/mach_runs.py,find_run,python,"Exact id, else a unique prefix. Returns Run or None; raises ValueError when ambiguous."
+lib/mach_runs.py,new_run,python,"Allocate a unique run id and folder, write input copy and run.md."
+lib/mach_runs.py,tee_exec,python,"Run a tool headless, stream its output, tee into a local log. Returns (rc, text)."
+lib/mach_runs.py,log_path,python,
+lib/mach_sheets.py,read_csv,python,"All non-blank records of a CSV (UTF-8, BOM tolerated). Raises OSError / UnicodeDecodeError / csv.Error."
+lib/mach_sheets.py,write_csv_text,python,
+lib/mach_sheets.py,content_hash,python,"Hash of the parsed cells (not the bytes), so line endings and quoting style do not count as a change."
+lib/mach_sheets.py,valid_date,python,
+lib/mach_sheets.py,set_config,python,"Optional sheets.toml: workbook = ""<name>"" (default: the folder name)."
+lib/mach_sheets.py,workbook_name,python,
+lib/mach_sheets.py,workbook_path,python,
+lib/mach_sheets.py,sheet_name_problem,python,
+lib/mach_sheets.py,Entry,python,One index row plus what was read from its CSV.
+lib/mach_sheets.py,Entry.__init__,python,
+lib/mach_sheets.py,read_index,python,"Return (header, rows as dicts, errors). Rows are padded dicts keyed by the header."
+lib/mach_sheets.py,load_entries,python,"Read index.csv and every CSV it lists. Returns (entries, results) where results are (level, message)."
+lib/mach_sheets.py,check_csv,python,
+lib/mach_sheets.py,read_record,python,"The build record stored in the workbook: {file: (sha256, updated)} and the sheet names; None when unreadable."
+lib/mach_sheets.py,lint_set,python,"Lint a sheet set folder. Returns a list of (level, message); levels FAIL, WARN."
+lib/mach_sheets.py,lint_workbook,python,
+lib/mach_sheets.py,plan_build,python,"Compute what `build` would write. Returns (problems, plan) - plan is None when something blocks the build."
+lib/mach_sheets.py,scaffold,python,Files a new set would get: {relative name: text}.
+lib/mach_sheets.py,col_letter,python,
+lib/mach_sheets.py,_text,python,
+lib/mach_sheets.py,_width,python,
+lib/mach_sheets.py,_sheet_xml,python,
+lib/mach_sheets.py,_quote_sheet,python,
+lib/mach_sheets.py,build_xlsx,python,"sheets: [{""name"", ""header"", ""rows"", ""numeric""}]; record: {file: (sha, updated)}. Returns the .xlsx bytes (deterministic)."
+lib/mach_sheets.py,_col_index,python,
+lib/mach_sheets.py,read_xlsx,python,{sheet name: rows (lists of strings)} for workbooks built by mach (inline strings) or by Excel/openpyxl (shared strings).
+lib/mach_sheets_gen.py,headers,python,{key: [values]} for every `# mach-<key>: value` line; a usage line that does not start with `mach ` continues the previous one.
+lib/mach_sheets_gen.py,split_top,python,"Split on `sep` outside <>, [], () and quotes."
+lib/mach_sheets_gen.py,kv_tokens,python,"`working collect=preview-only` -> ('working', {'collect': 'preview-only'})."
+lib/mach_sheets_gen.py,command_scripts,python,
+lib/mach_sheets_gen.py,yes,python,
+lib/mach_sheets_gen.py,_comment,python,
+lib/mach_sheets_gen.py,command_rows,python,commands.csv rows plus {command: usage text} for the flag scan.
+lib/mach_sheets_gen.py,flag_rows,python,
+lib/mach_sheets_gen.py,md_code,python,"A code span safe inside a table cell: backticks around it, pipes escaped (GFM turns \| back into |)."
+lib/mach_sheets_gen.py,md_text,python,"Plain cell text: one line, pipes escaped, <placeholders> put in code spans so previews do not read them as HTML."
+lib/mach_sheets_gen.py,markdown_table,python,"GFM table: header, --- separator, every row padded to the header width, a trailing newline (callers keep blank lines around it)."
+lib/mach_sheets_gen.py,commands_table_md,python,
+lib/mach_sheets_gen.py,_clean,python,
+lib/mach_sheets_gen.py,_comment_block_above,python,"The comment block ending right above 1-based line `lineno`; its first line, or ''."
+lib/mach_sheets_gen.py,python_functions,python,
+lib/mach_sheets_gen.py,bash_functions,python,
+lib/mach_sheets_gen.py,function_rows,python,
+lib/mach_sheets_gen.py,_strip_inline_comment,python,
+lib/mach_sheets_gen.py,_default_for,python,
+lib/mach_sheets_gen.py,_render,python,
+lib/mach_sheets_gen.py,config_rows,python,
+lib/mach_sheets_gen.py,destination_rows,python,
+lib/mach_sheets_gen.py,template_rows,python,
+lib/mach_sheets_gen.py,unit_rows,python,
+lib/mach_sheets_gen.py,generate,python,"{file: (header, rows) or None when its source is missing} in index order, plus the COMMANDS-TABLE.md text."
+lib/mach_sheets_gen.py,index_meta,python,Static index.csv columns per file (rows and updated are filled by `mach sheets build`).
+lib/mach_subsystem.py,root,python,
+lib/mach_subsystem.py,path,python,
+lib/mach_subsystem.py,ids,python,
+lib/mach_subsystem.py,parse,python,
+lib/mach_subsystem.py,load,python,
+lib/mach_subsystem.py,dest_ok,python,
+lib/mach_subsystem.py,lint,python,
+lib/mach_subsystem.py,quote,python,
+lib/mach_subsystem.py,render_table,python,
+lib/mach_subsystem.py,render,python,
+lib/mach_subsystem.py,draft,python,
+lib/mach_subsystem.py,section_blocks,python,
+lib/mach_subsystem.py,unit_from,python,
+lib/mach_subsystem.py,from_setup,python,
+lib/mach_subsystem.py,replace_block,python,
+lib/mach_subsystem.py,update_unit,python,
+lib/mach_subsystem.py,diff,python,
+lib/mach_subsystem.py,save,python,
+lib/minitoml.py,TomlError,python,
+lib/minitoml.py,TomlError.__init__,python,
+lib/minitoml.py,_strip_comment,python,Remove a trailing # comment that is not inside a string.
+lib/minitoml.py,_bracket_depth,python,Net depth of [ ] and { } outside strings (used to join multi-line arrays).
+lib/minitoml.py,_split_key,python,Split a dotted key (bare or quoted parts) into a list of parts.
+lib/minitoml.py,_P,python,Value parser over one string.
+lib/minitoml.py,_P.__init__,python,
+lib/minitoml.py,_P.ws,python,
+lib/minitoml.py,_P.value,python,
+lib/minitoml.py,_P.basic_string,python,
+lib/minitoml.py,_P.array,python,
+lib/minitoml.py,_P.inline_table,python,
+lib/minitoml.py,_P.scalar,python,
+lib/minitoml.py,_set,python,
+lib/minitoml.py,loads,python,
+lib/minitoml.py,_find_eq,python,
+lib/minitoml.py,load_path,python,
+lib/minitoml.py,parse,python,"tomllib when available, else minitoml. Same result shape either way."
+libexec/mach-ai,Item,python,
+libexec/mach-ai,Item.__init__,python,
+libexec/mach-ai,ai_dir,python,
+libexec/mach-ai,sha,python,
+libexec/mach-ai,compose,python,"AGENTS.md + machine file (+ codex extra). Returns (text, sources, missing)."
+libexec/mach-ai,generated,python,
+libexec/mach-ai,file_state,python,"(state, detail) for a file we want to hold `wanted`. safe_marker: how we recognise a file we may refresh."
+libexec/mach-ai,is_stub,python,"A tiny import file: only @import lines and one-line <!-- comments -->, with at least one import."
+libexec/mach-ai,stub_state,python,Import stubs may carry a comment header (the real ones do). OK when the wanted @import is already the file's import.
+libexec/mach-ai,plan_rules,python,
+libexec/mach-ai,skill_sources,python,
+libexec/mach-ai,tree_sha,python,
+libexec/mach-ai,plan_skills,python,
+libexec/mach-ai,apply_item,python,
+libexec/mach-ai,main,python,
+libexec/mach-approve,main,python,
+libexec/mach-ask,main,python,
+libexec/mach-do,main,python,
+libexec/mach-docs,want_apply,bash,
+libexec/mach-docs-collect.py,iso,python,
+libexec/mach-docs-collect.py,T,python,literal local time 'YYYY-MM-DD HH:MM[:SS]' -> ISO with offset
+libexec/mach-docs-collect.py,tilde,python,
+libexec/mach-docs-collect.py,dstat,python,"(birth, mtime) on this machine, not following symlinks; birth 0 = n/a."
+libexec/mach-docs-collect.py,seen_birth,python,Keep the earliest birth ever seen for files inside machine-flows (atomic rewrites reset ext4 birth).
+libexec/mach-docs-collect.py,add,python,
+libexec/mach-docs-collect.py,synced_dates,python,"For Mac-origin files: the collector's copy (birth=arrival, mtime preserved by Syncthing)."
+libexec/mach-docs-collect.py,history_candidates,python,"Where the user's history module is looked for, in order (first existing file wins)."
+libexec/mach-docs-collect.py,load_history,python,
+libexec/mach-docs-collect.py,H,python,
+libexec/mach-docs-collect.py,tv,python,History time value: 'YYYY-MM-DD HH:MM[:SS]' (local) or int epoch -> ISO text; '' and None pass through.
+libexec/mach-docs-collect.py,real_path,python,
+libexec/mach-docs-collect.py,cron_note,python,
+libexec/mach-docs-collect.py,expand,python,"Placeholders in history text: {BOTH}, {STAGE}, {cron_note}, {walkfiles:REL}, {nfiles:REL}."
+libexec/mach-docs-collect.py,listdir_safe,python,
+libexec/mach-docs-collect.py,min_child_mtime,python,
+libexec/mach-docs-collect.py,mac_file,python,
+libexec/mach-docs-collect.py,mac_out,python,
+libexec/mach-docs-collect.py,add_history_row,python,
+libexec/mach-docs-collect.py,apply_history_row,python,
+libexec/mach-docs-collect.py,Ctx,python,What a history module's dynamic_rows(ctx) may look at.
+libexec/mach-docs-collect.py,mach_purpose,python,"Purpose text for files of the mach CLI checkout (~/machine-flows/mach/), added by mach itself."
+libexec/mach-docs-collect.py,area_kind,python,
+libexec/mach-docs-collect.py,lin_walk,python,
+libexec/mach-doctor,main,python,
+libexec/mach-flow,main,python,
+libexec/mach-inventory,cleanup,bash,shellcheck disable=SC2317 # runs through the EXIT trap
+libexec/mach-inventory,wanted,bash,wanted <relative path>: section filter
+libexec/mach-inventory,protected,bash,
+libexec/mach-memory,Lesson,python,
+libexec/mach-memory,Lesson.__init__,python,
+libexec/mach-memory,Lesson.get,python,
+libexec/mach-memory,Lesson.status,python,
+libexec/mach-memory,Lesson.title,python,
+libexec/mach-memory,lessons_root,python,
+libexec/mach-memory,load_cfg,python,
+libexec/mach-memory,scan,python,
+libexec/mach-memory,similar,python,
+libexec/mach-memory,scope_overlap,python,
+libexec/mach-memory,contradicts,python,
+libexec/mach-memory,reviews_root,python,"Where --save writes: $MACH_REVIEWS_DIR, else [memory] reviews_dir, else <lessons_dir>/reviews."
+libexec/mach-memory,save_review,python,Write the report to reviews_dir/YYYY-MM[-N].md without clobbering; returns the path.
+libexec/mach-memory,today,python,
+libexec/mach-memory,days_between,python,
+libexec/mach-memory,review,python,
+libexec/mach-memory,render,python,
+libexec/mach-memory,apply_archives,python,
+libexec/mach-memory,set_front,python,"Set/replace top-level keys in the frontmatter block, keeping everything else byte-for-byte."
+libexec/mach-memory,preview_collect,python,
+libexec/mach-memory,preview_promote,python,
+libexec/mach-memory,list_csv,python,
+libexec/mach-memory,last_review,python,
+libexec/mach-memory,generate_index,python,"INDEX.md text in the plan 09 section 4 format: header counts, then one line per proposed/active/promoted lesson per topic."
+libexec/mach-memory,init_plan,python,"Returns (dirs_to_make, files_to_make {path: text}, files_to_replace {path: text}, kept)."
+libexec/mach-memory,run_init,python,
+libexec/mach-memory,main,python,
+libexec/mach-names,target,bash,
+libexec/mach-note,main,python,
+libexec/mach-plans,plans_dir,python,
+libexec/mach-plans,count_boxes,python,
+libexec/mach-plans,status_line,python,
+libexec/mach-plans,list_plans,python,
+libexec/mach-plans,find_plan,python,
+libexec/mach-plans,reference_hits,python,"Files (outside plans/archived) that mention the plan. Returns list of (path, kind, line_no, line)."
+libexec/mach-plans,register_row,python,
+libexec/mach-plans,changelog_insert,python,
+libexec/mach-plans,cmd_list,python,
+libexec/mach-plans,cmd_archive,python,
+libexec/mach-plans,main,python,
+libexec/mach-queue,main,python,
+libexec/mach-reject,main,python,
+libexec/mach-research,main,python,
+libexec/mach-run,report_problems,python,
+libexec/mach-run,flow_input,python,
+libexec/mach-run,run_one,python,
+libexec/mach-run,worst,python,
+libexec/mach-run,main,python,
+libexec/mach-services,index_rows,python,
+libexec/mach-services,row_status,python,"Last-column status for 75, the 'Status' column (second to last) for 76."
+libexec/mach-services,is_active_row,python,
+libexec/mach-services,row_tokens,python,Names a live item would carry: backticked words and basenames of paths in the row.
+libexec/mach-services,live_linux,python,
+libexec/mach-services,live_mac,python,
+libexec/mach-services,cron_lines,python,
+libexec/mach-services,unit_state,python,
+libexec/mach-services,failed_units,python,
+libexec/mach-services,main,python,
+libexec/mach-sheets,report,python,"Print lint results; return the exit code (0 OK, 1 warnings, 2 failures)."
+libexec/mach-sheets,cmd_lint,python,
+libexec/mach-sheets,write_atomic,python,
+libexec/mach-sheets,do_build,python,
+libexec/mach-sheets,cmd_new,python,
+libexec/mach-sheets,desired_files,python,"{path: text} for the refresh, plus the list of CSVs skipped because their source is missing."
+libexec/mach-sheets,cmd_refresh,python,
+libexec/mach-sheets,sh_inside,python,
+libexec/mach-sheets,main,python,
+libexec/mach-status,brief,python,
+libexec/mach-status,main,python,
+libexec/mach-subsystem,emit,python,
+libexec/mach-subsystem,manifest,python,
+libexec/mach-subsystem,check,python,
+libexec/mach-subsystem,admin,python,
+libexec/mach-subsystem,ingested,python,
+libexec/mach-subsystem,backup_write,python,
+libexec/mach-subsystem,secrets,python,
+libexec/mach-subsystem,header,python,
+libexec/mach-subsystem,curl_config,python,
+libexec/mach-subsystem,send,python,

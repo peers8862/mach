@@ -1,0 +1,4 @@
+unit,kind,parent,lead,repo,folder,verified
+alpha,pillar,,grokbot:Example,example,alpha,false
+beta,product,alpha,user,example,beta,true
+gamma,pipeline,,user,,,false

@@ -1,0 +1,8 @@
+template,purpose,ingested_by
+~/machine-flows/ai-authored/templates/flow-request.md,A request to run an existing mach flow,mach run
+~/machine-flows/ai-authored/templates/research-brief.md,A research question for an AI tool,mach run
+~/machine-flows/ai-authored/templates/role-change.md,Change who holds a role in a unit,mach subsystem role <id> --from <file>
+~/machine-flows/ai-authored/templates/subsystem-prompt.md,"A prompt for a unit's role, sent with mach run",mach run
+~/machine-flows/ai-authored/templates/subsystem-setup.md,Describe a whole subsystem to scaffold,mach subsystem new <id> --from <file>
+~/machine-flows/ai-authored/templates/task-brief.md,A task for an AI tool in a working folder,mach run
+~/machine-flows/ai-authored/templates/unit-setup.md,Add or update one unit in a subsystem,mach subsystem unit <id> --from <file>

@@ -1,0 +1,48 @@
+section,key,default,meaning
+machines,names,[],"known machine names, e.g. [""linux-box"", ""mac-laptop""]; valid values of `machine:` in documents"
+machines,mac,"""""",the macOS machine that delivers Agenda/Drafts notes and runs `mach docs macstat`
+machines,collector,"""""",the machine that runs `mach docs collect` (single writer); empty = the machine you run on
+note,default,"""inbox""",inbox | agenda | drafts | <named destination>
+note.inbox,dir,"""files/inbox/notes""",relative to ~/machine-flows
+note.agenda,project,"""Inbox""","set it: without a project Agenda uses the selected project, or errors if none is selected"
+note.agenda,method,"[""mcp"", ""url""]","tried in order on macOS, then the outbox fallback"
+note.agenda,mcp_url,"""http://127.0.0.1:16106/mcp""",
+note.agenda,tags,[],
+note.drafts,tags,"[""mach""]",
+note.drafts,method,"[""cli"", ""url""]",
+note.dest.ideas,type,,file | inbox | agenda | drafts
+note.dest.ideas,path,,must stay inside ~/machine-flows
+note.dest.work,type,,
+note.dest.work,project,,
+routes,default_tool,"""claude""",claude | codex | cursor-agent | grokcli-agent | kiro
+routes,default_machine,"""""",empty = the machine you run on
+routes,permission,"""read-only""",read-only | write (flags --write override)
+routes.project.example,path,,work under this path goes to this tool (and machine)
+routes.project.example,tool,,work under this path goes to this tool (and machine)
+routes.project.example,machine,,work under this path goes to this tool (and machine)
+tools.claude,command,,executable name; the headless flags are built in (see docs/DECISIONS.md)
+tools.kiro,command,,
+doctor,peer_ssh,"""""",ssh host alias of the other machine; empty = skip the ssh check
+doctor,disk_min_free_pct,10,
+doctor,mem_min_avail_mb,500,
+doctor,outbox_max_age_hours,24,
+doctor,agents_max_lines,130,plan 09 section 8 (hard cap is ~150)
+doctor,lessons_index_max_lines,300,
+doctor,proposed_max,30,
+doctor,grokbot_heartbeat_max_age_s,180,
+doctor,syncthing_url,"""http://127.0.0.1:8384""",
+doctor,syncthing_folder,"""machine-flows""",
+doctor,scan_budget_s,4,time allowed for the machine-flows hygiene walk
+runs,dir,"""""",empty = ~/machine-flows/files/runs (env MACH_RUNS_DIR overrides)
+runs,retention_days,90,"full records kept this long, then monthly summaries (compaction is a later step)"
+queue,background_machine,"""""","where `machine: any` documents run (--inbox, --queue); empty = the machine you run on"
+memory,lessons_dir,"""service-memories/lessons""",
+memory,reviews_dir,"""""",empty = <lessons_dir>/reviews (env MACH_REVIEWS_DIR overrides); `mach memory review --save` writes YYYY-MM.md there
+docs,macstat_paths,[],extra paths (relative to ~ on the Mac) `mach docs macstat` should stat
+docs,macstat_cron_pattern,"""machine-flows""",crontab lines matching this (grep -E) are recorded by `mach docs macstat`
+drafts,hub_name,"""Mach Hub""",name of the generated Drafts action; --name overrides it
+drafts,hub_group_uuid,"""""",Drafts action group to import into; empty = a stable generated id
+env,MACH_DEFAULT_TOOL,,overrides config key routes.default_tool
+env,MACH_NOTE_DEFAULT,,overrides config key note.default
+env,MACH_PEER_SSH,,overrides config key doctor.peer_ssh
+env,MACH_RETENTION_DAYS,,overrides config key runs.retention_days

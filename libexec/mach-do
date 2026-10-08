@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+# mach-summary: Route a one-line task to the right tool and machine, confirm, run it, record it
+# mach-group: gateway
+# mach-writes: yes
+# mach-flag: --bg | run in a detached tmux session named mach-<slug> | off
+# mach-usage: mach do "<task>" [--tool T] [--machine M] [--path P] [--write] [--bg] [--yes] [--dry-run] [--json]
+# mach-help: Shows the route (tool, machine, path, permission, output), asks to confirm (--yes skips), runs the tool
+# mach-help: headless and records a run in files/runs/. Tools run read-only unless --write (or routes.permission = "write").
+# mach-help: Routing: --tool/--machine/--path > [routes.project.<id>] in the config > routes.default_tool (claude) on this machine.
+# mach-help: --machine other than this one: v1 creates a queued run for that machine (no SSH execution yet).
+# mach-help: --bg runs the task inside a tmux session (error if tmux is missing).
+# mach-help: --dry-run prints the exact command (prompt truncated) and writes nothing.
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+import mach_exec as ex  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach do", add_help=False)
+    ap.add_argument("task", nargs="+")
+    ap.add_argument("--tool")
+    ap.add_argument("--machine")
+    ap.add_argument("--path")
+    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--bg", action="store_true")
+    ap.add_argument("--yes", "-y", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    dry = a.dry_run or mc.env_flag("MACH_DRY_RUN")
+    js = a.json or mc.env_flag("MACH_JSON")
+    rep = ex.Reporter(js)
+    task = " ".join(a.task).strip()
+    if not task:
+        mc.die("empty task")
+    if a.tool and a.tool != "auto" and a.tool not in mc.KNOWN_TOOLS:
+        mc.die("unknown tool %r: use one of %s" % (a.tool, ", ".join(mc.KNOWN_TOOLS)))
+    rt = ex.route(cfg, tool=a.tool, machine=a.machine, path=a.path, write=a.write)
+    if rt["tool"] not in mc.KNOWN_TOOLS:
+        mc.die("unknown tool %r from the config: use one of %s" % (rt["tool"], ", ".join(mc.KNOWN_TOOLS)))
+    write = rt["permission"] == "write"
+    ex.show_route(rep, rt)
+    argv, pidx, note = mc.tool_argv(rt["tool"], task, write=write, cfg=cfg)
+    other = rt["machine"] != mc.host()
+    if dry:
+        if other:
+            rep.say("dry-run: would create a queued run for machine %s (no execution here)" % rt["machine"])
+        else:
+            rep.say("dry-run: would run in %s:" % mc.tilde(rt["path"]))
+            rep.say("  " + mc.shown_cmd(argv, pidx))
+            if note:
+                rep.say("  note: " + note)
+            if a.bg:
+                rep.say("  (--bg: inside a tmux session named mach-%s)" % mc.slugify(task, 20))
+        return 0
+    if not other:
+        ex.require_tool(rt["tool"], cfg, rep)
+    if not mc.confirm("Run this?", assume_yes=a.yes or mc.env_flag("MACH_YES"), default=True):
+        mc.eprint("mach: not confirmed (non-interactive runs need --yes)")
+        return mc.EXIT_FAIL
+    if other:
+        run = mr.new_run(cfg, kind="do", title=task, tool=rt["tool"], path=rt["path"], input_text=task, machine=rt["machine"],
+                         status="queued", extra={"permission": rt["permission"]})
+        run.set_step(1, step="do", tool=rt["tool"], status="pending")
+        run.note("queued for %s: v1 has no SSH execution; run it there with: mach do ... --yes" % rt["machine"])
+        run.save()
+        rep.say("queued %s for machine %s (v1: no SSH execution yet)" % (run.id, rt["machine"]))
+        if js:
+            mc.emit_json({"id": run.id, "status": "queued", "machine": rt["machine"]})
+        return 0
+    if a.bg:
+        tmux = mc.cmd("tmux")
+        if not mc.which(tmux):
+            mc.die("--bg needs tmux, which was not found on PATH")
+        session = "mach-" + mc.slugify(task, 20)
+        inner = [os.path.join(mc.mach_home(), "bin", "mach"), "do", task, "--tool", rt["tool"], "--path", rt["path"], "--yes"]
+        if write:
+            inner.append("--write")
+        import shlex
+        cmd = " ".join(shlex.quote(x) for x in inner)
+        rc, _o, e = mc.run_capture([tmux, "new-session", "-d", "-s", session, "-c", rt["path"], cmd], timeout=10)
+        if rc != 0:
+            mc.die("tmux failed: %s" % e.strip())
+        rep.say("started in tmux session %s (attach: tmux attach -t %s)" % (session, session))
+        return 0
+    run = mr.new_run(cfg, kind="do", title=task, tool=rt["tool"], path=rt["path"], input_text=task, status="running",
+                     extra={"permission": rt["permission"]})
+    run.set_step(1, step="do", tool=rt["tool"], status="running")
+    run.save()
+    rc, _text, outname = ex.exec_ai(run, 1, rt["tool"], task, rt["path"], write, cfg, stream=not js)
+    if rc != 0:
+        run.set_step(1, status="failed", output=outname)
+        run.set_status("failed", reason="%s exited %d" % (rt["tool"], rc))
+        mc.eprint("mach: %s exited %d (run %s)" % (rt["tool"], rc, run.id))
+        return mc.EXIT_FAIL
+    run.set_step(1, status="done", output=outname)
+    run.set_status("done")
+    if js:
+        mc.emit_json({"id": run.id, "status": "done", "outputs": run.meta.get("outputs", []), "run_dir": mc.tilde(run.dir)})
+    else:
+        rep.say("run %s: done" % run.id)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

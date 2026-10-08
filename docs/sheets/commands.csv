@@ -1,0 +1,43 @@
+command,subcommand,usage,summary,half,status,writes,has_apply,has_dry_run
+ai,apply,mach ai apply [rules|skills] [--tool T] [--apply],Preview/apply wiring of shared AI rules and skills into each tool (plan 06),upkeep,working,yes,yes,no
+ai,show,mach ai show  [rules|skills] [--tool T],"same preview, never writes",upkeep,working,no,no,no
+approve,,mach approve <id> [--step N] [--json],Approve a run that is waiting at a gate and continue it,gateway,working,yes,no,no
+ask,,"mach ask <tool> ""<prompt>"" [--write] [--path P] [--dry-run] [--json]",Send a prompt straight to one named tool in headless mode (read-only by default),gateway,working,yes,no,yes
+do,,"mach do ""<task>"" [--tool T] [--machine M] [--path P] [--write] [--bg] [--yes] [--dry-run] [--json]","Route a one-line task to the right tool and machine, confirm, run it, record it",gateway,working,yes,no,yes
+docs,collect,mach docs [collect] [--apply],Update the per-machine docs-index CSVs (collect) or rebuild the xlsx workbook (build),upkeep,working,yes,yes,no
+docs,build,mach docs build [--apply],Update the per-machine docs-index CSVs (collect) or rebuild the xlsx workbook (build),upkeep,working,yes,yes,no
+docs,macstat,mach docs macstat [--apply],Update the per-machine docs-index CSVs (collect) or rebuild the xlsx workbook (build),upkeep,working,yes,yes,no
+doctor,,mach doctor [--json] [--quiet],"Read-only health checks for this machine (Syncthing, services, CLI names, Grok Bot, disk, hygiene, caps)",upkeep,working,no,no,no
+flow,,mach flow <name> [input...] [--dry-run] [--queue] [--write] [--json],Run a multi-step recipe (flow) with approval gates,gateway,working,yes,no,yes
+flow,list,mach flow list,Run a multi-step recipe (flow) with approval gates,gateway,working,no,no,no
+inventory,,mach inventory [--host H] [--section S] [--light|--full] [--diff] [--apply],"Regenerate inventory/<host>/ for this machine, show the diff, write only with --apply",upkeep,working,yes,yes,no
+mcp,render,mach mcp [render] [--tool T],Render (dry-run) or apply the MCP server manifest for each tool via scripts/mcp-apply.sh,upkeep,working,no,no,no
+mcp,apply,mach mcp apply [--tool T] [--apply],Render (dry-run) or apply the MCP server manifest for each tool via scripts/mcp-apply.sh,upkeep,stub,yes,yes,no
+memory,init,mach memory init [--reindex] [--apply] [--json],"Set up and review lessons (init skeleton, duplicates, stale, caps); collect/promote are preview-only in v1",upkeep,working,yes,yes,no
+memory,review,mach memory review [--save] [--apply] [--json],"Set up and review lessons (init skeleton, duplicates, stale, caps); collect/promote are preview-only in v1",upkeep,working,yes,yes,no
+memory,collect,mach memory collect,PREVIEW-ONLY in v1: lists raw memory files it would turn into proposed lessons,upkeep,preview-only,no,no,no
+memory,promote,mach memory promote,PREVIEW-ONLY in v1: lists promotion candidates for AGENTS.md; changes nothing,upkeep,preview-only,no,no,no
+names,,mach names [--fix] [--apply],"Check that CLI agent names are explicit (cursor-agent, grokcli-agent, no bare `agent`)",upkeep,working,yes,yes,no
+note,,"mach note ""text""; mach note agenda|drafts|inbox|<name> ""text""; mach note --to agenda -- ""text that may start with a destination name"" pbpaste | mach note drafts; mach note [dest] ""text"" [-t TITLE] [--tag X ...] [--tags a,b] [--project P] [--date D] [--flag] [--open] [--file PATH] [--dry-run] [--json]","Quick capture to inbox, Agenda, Drafts or a named destination",gateway,working,yes,no,yes
+note,flush,mach note flush [--apply],macOS: deliver outbox items to Agenda/Drafts,gateway,working,yes,yes,no
+onboard,,mach onboard [--apply] [--skip-previews],"Checklist for a new machine: prerequisites, link mach, Syncthing pairing, then previews",upkeep,working,yes,yes,no
+plans,list,mach plans list [--json],List plans with open/total checkbox counts; archive a finished plan (plans/README.md section 4),upkeep,working,no,no,no
+plans,archive,mach plans archive <NN|file> [--apply] [--force],List plans with open/total checkbox counts; archive a finished plan (plans/README.md section 4),upkeep,working,yes,yes,no
+queue,,mach queue [--due today|YYYY-MM-DD] [--json],"List queued runs, runs waiting for approval, inbox prompts not yet run, and outbox items",gateway,working,no,no,no
+reject,,"mach reject <id> ""reason""",Reject (cancel) a run that is waiting at a gate or queued,gateway,working,yes,no,no
+research,,"mach research ""<question>"" [--depth quick|deep] [--tool T] [--dry-run] [--json]","Answer a question with sources (quick), or start the research-to-plan flow (deep)",gateway,working,yes,no,yes
+run,,mach run <file.md> [--dry-run] [--queue] [--json] [--tool T] [--path P] [--machine M] [--write]; mach run --inbox [--dry-run] [--json],"Run a prompt document (task, research or flow brief): validate, plan, record, execute",gateway,working,yes,no,yes
+services,check,mach services [check]; mach services [check] --update,default: compare live units with the index files,upkeep,working,no,no,no
+services,show,mach services show,print the rows parsed from 75 and 76 for this host,upkeep,working,no,no,no
+sheets,lint,mach sheets lint <dir> [--json],"Sheet sets: lint, build (CSVs -> xlsx), scaffold and refresh a folder of index.csv + CSV files + a generated workbook",upkeep,working,no,no,no
+sheets,build,mach sheets build <dir> [--dry-run] [--json],"Sheet sets: lint, build (CSVs -> xlsx), scaffold and refresh a folder of index.csv + CSV files + a generated workbook",upkeep,working,yes,no,yes
+sheets,new,mach sheets new <dir> [--apply],"Sheet sets: lint, build (CSVs -> xlsx), scaffold and refresh a folder of index.csv + CSV files + a generated workbook",upkeep,working,yes,yes,no
+sheets,refresh,mach sheets refresh <set> [--build] [--check] [--dry-run] [--out DIR],"Sheet sets: lint, build (CSVs -> xlsx), scaffold and refresh a folder of index.csv + CSV files + a generated workbook",upkeep,working,yes,no,yes
+status,,mach status [id] [--status S] [-n N] [--all] [--json],"Show recent runs and their state, or one run in detail",gateway,working,no,no,no
+subsystem,list,mach subsystem list,Manage subsystem manifests and send prompts to unit roles,gateway,working,no,no,no
+subsystem,show,mach subsystem show <id>,Manage subsystem manifests and send prompts to unit roles,gateway,working,no,no,no
+subsystem,lint,mach subsystem lint [id],Manage subsystem manifests and send prompts to unit roles,gateway,working,no,no,no
+subsystem,new,mach subsystem new <id> [--from D] [--apply] [--replace],Manage subsystem manifests and send prompts to unit roles,gateway,working,yes,yes,no
+subsystem,unit,mach subsystem unit <id> --from D [--apply],Manage subsystem manifests and send prompts to unit roles,gateway,working,yes,yes,no
+subsystem,role,mach subsystem role <id> --from D [--apply],Manage subsystem manifests and send prompts to unit roles,gateway,working,yes,yes,no
+<subsystem>,,mach <subsystem> [unit] [prompt] [--role R|--to D] [--roles] [--reply chat|inbox] [--write] [--force] [--dry-run] [--json],Manage subsystem manifests and send prompts to unit roles,subsystem,working,yes,no,yes

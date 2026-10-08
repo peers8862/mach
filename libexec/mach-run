@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+# mach-summary: Run a prompt document (task, research or flow brief): validate, plan, record, execute
+# mach-group: gateway
+# mach-writes: yes
+# mach-flag: --inbox | run every prompt document in files/inbox/prompts not yet run | off
+# mach-usage: mach run <file.md> [--dry-run] [--queue] [--json] [--tool T] [--path P] [--machine M] [--write]
+# mach-usage: mach run --inbox [--dry-run] [--json]
+# mach-help: The frontmatter is checked against plan 08 section 3.6: unknown keys or values are an error with the line
+# mach-help: number (exit 2). The input file is never modified; its state lives in the run record (files/runs/).
+# mach-help: --dry-run shows the plan and the exact tool command (prompt truncated) and creates no record.
+# mach-help: --queue creates a queued run and returns its id at once. `machine: any` queues for the background machine ([queue] background_machine, default this machine).
+# mach-help: --inbox runs every files/inbox/prompts/*.md addressed to this machine that has not run yet.
+# mach-help: approval: before-run waits at a gate first; before-apply runs the tool read-only and waits before writing the output.
+# mach-help: output: pr or linear-comment is outward: it ALWAYS stops at a gate (exit 3) and, once approved, only writes a
+# mach-help: ready-to-run handoff (mach never opens PRs or posts). type: flow documents are handed to `mach flow`.
+# mach-help: Exit codes: 0 done/queued, 1 some inbox docs invalid, 2 validation or tool failure, 3 waiting for approval.
+import argparse
+import subprocess
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+import mach_exec as ex  # noqa: E402
+import frontmatter as fm  # noqa: E402
+
+
+def report_problems(path, doc):
+    for ln, msg in doc.errors:
+        mc.eprint("%s:%d: error: %s" % (path, ln, msg))
+    for ln, msg in doc.warnings:
+        mc.eprint("%s:%d: warning: %s" % (path, ln, msg))
+
+
+def flow_input(doc):
+    text = str(doc.meta.get("input", "")).strip()
+    if doc.body.strip():
+        text = (text + "\n\n" + doc.body.strip()).strip()
+    return text
+
+
+def run_one(cfg, path, a, rep, js, dry):
+    doc = fm.load_prompt_doc(path)
+    report_problems(path, doc)
+    if not doc.ok:
+        return None, mc.EXIT_FAIL
+    typ = doc.meta.get("type")
+    if typ in ("subsystem-setup", "unit-setup", "role-change"):
+        mc.eprint("%s: use mach subsystem %s --from %s" % (path, {"subsystem-setup":"new <id>", "unit-setup":"unit <id>", "role-change":"role <id>"}[typ], path))
+        return None, 2
+    if typ == "subsystem-prompt":
+        m = doc.meta
+        args = [sys.executable, os.path.join(mc.mach_home(), "libexec", "mach-subsystem"), "dispatch", str(m["subsystem"]), str(m["unit"]), doc.body.strip()]
+        args += ["--source", ex.source_label(path)]
+        if m.get("to"): args += ["--to", str(m["to"])]
+        if m.get("role"): args += ["--role", str(m["role"])]
+        if m.get("reply"): args += ["--reply", str(m["reply"])]
+        if dry: args.append("--dry-run")
+        if a.write: args.append("--write")
+        if js: args.append("--json")
+        return None, subprocess.call(args)
+    if typ == "flow":
+        name = str(doc.meta.get("flow"))
+        rec, src = ex.load_recipe(name)
+        if rec is None:
+            mc.eprint("%s:%d: error: flow %r not found (try: mach flow list)" % (path, doc.lines.get("flow", 1), name))
+            return None, mc.EXIT_FAIL
+        rep.say("flow document -> flow %s (approval: %s)" % (name, doc.meta.get("approval", "before-run")))
+        if dry:
+            ex.describe_recipe(rep, rec, flow_input(doc), cfg)
+            return None, 0
+        if not flow_input(doc):
+            mc.eprint("%s:%d: error: input is empty: fill in `input:` (or the body) before a real run" % (path, doc.lines.get("input", 1)))
+            return None, mc.EXIT_FAIL
+        run, rc = ex.start_flow(cfg, name, flow_input(doc), rep, write=a.write, json_mode=js, queue=bool(a.queue) or doc.meta.get("approval") == "before-run")
+        if run is not None and doc.meta.get("approval") == "before-run" and rc == 0:
+            run.meta["source"] = ex.source_label(path)
+            run.set_status("waiting-approval", reason="approval: before-run, nothing has executed yet", gate="before-run")
+            rep.say("waiting for approval (before-run): mach approve %s" % run.id)
+            return run, mc.EXIT_WAIT
+        if run is not None:
+            run.meta["source"] = ex.source_label(path)
+            run.save()
+        return run, rc
+    plan = ex.plan_doc(doc, cfg, tool=a.tool, machine=a.machine, path=a.path, write=a.write)
+    ex.describe_plan(rep, plan)
+    argv, pidx, note = mc.tool_argv(plan["route"]["tool"], plan["prompt"], write=plan["route"]["permission"] == "write", cfg=cfg)
+    if dry:
+        rep.say("dry-run: %s" % mc.shown_cmd(argv, pidx))
+        if note:
+            rep.say("note: " + note)
+        if not mc.tool_available(plan["route"]["tool"], cfg):
+            rep.say("note: %s is not on PATH here" % mc.tool_binary_name(plan["route"]["tool"], cfg))
+        if plan["gates"]:
+            rep.say("gates: %s (a real run would stop there, exit 3)" % ", ".join(plan["gates"]))
+        return None, 0
+    return ex.start_prompt_run(cfg, doc, path, rep, tool=a.tool, machine=a.machine, path=a.path, write=a.write,
+                               queue=a.queue, json_mode=js)
+
+
+def worst(codes):
+    if 2 in codes:
+        return 2
+    if 3 in codes:
+        return 3
+    if 1 in codes:
+        return 1
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach run", add_help=False)
+    ap.add_argument("file", nargs="?")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--queue", action="store_true")
+    ap.add_argument("--inbox", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--tool")
+    ap.add_argument("--path")
+    ap.add_argument("--machine")
+    ap.add_argument("--write", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    dry = a.dry_run or mc.env_flag("MACH_DRY_RUN")
+    js = a.json or mc.env_flag("MACH_JSON")
+    rep = ex.Reporter(js)
+    if a.inbox:
+        items = ex.inbox_items(cfg)
+        todo = [i for i in items if not i["ran"] and i["ok"] and i["executor"] == mc.host()]
+        bad = [i for i in items if not i["ok"]]
+        for i in bad:
+            report_problems(i["path"], i["doc"])
+        rep.say("inbox: %d to run on %s, %d invalid, %d already run or for another machine" % (
+            len(todo), mc.host(), len(bad), len(items) - len(todo) - len(bad)))
+        codes = [1] if bad else []
+        results = []
+        for i in todo:
+            rep.say("-- %s" % i["source"])
+            run, rc = run_one(cfg, i["path"], a, rep, js, dry)
+            codes.append(rc)
+            results.append({"source": i["source"], "id": run.id if run else None, "exit": rc})
+        if js:
+            mc.emit_json({"inbox": results, "invalid": [i["source"] for i in bad]})
+        return worst(codes)
+    if not a.file:
+        mc.die("usage: mach run <file.md> | mach run --inbox")
+    path = mc.expand(a.file)
+    if not os.path.isfile(path):
+        mc.die("no such file: %s" % a.file)
+    run, rc = run_one(cfg, path, a, rep, js, dry)
+    if js and run is not None and rc == mc.EXIT_OK and a.queue:
+        mc.emit_json({"id": run.id, "status": run.status, "machine": run.meta.get("machine")})
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

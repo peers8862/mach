@@ -1,0 +1,96 @@
+command,flag,argument,meaning,default
+(global),--json,,Machine-readable JSON output,
+(global),--dry-run,,Show what would happen and change nothing,
+(global),--host,H,Act on this host,this machine
+(global),--version,,Print the mach version,
+(global),--help,,Show help,
+<subsystem>,--role,R,role to address,lead
+<subsystem>,--to,D,"explicit destination, overrides the role",the role destination
+<subsystem>,--roles,,list the unit roles and service profiles instead of sending,off
+<subsystem>,--reply,chat|inbox,where the reply goes,manifest delivery.reply (chat)
+<subsystem>,--write,,Allow the tool to edit files (default is read-only),routes.permission (read-only)
+<subsystem>,--force,,"Override a safety stop (cap, open boxes, already-exists)",
+<subsystem>,--dry-run,,Show what would happen and change nothing,
+<subsystem>,--json,,Machine-readable JSON output,
+ai,--tool,T,AI tool to use,routes.default_tool (claude)
+ai,--apply,,Carry out the change; without it the command only previews,preview
+approve,--step,N,gate step number to approve (numbers are shown in the run steps table),the next waiting gate
+approve,--json,,Machine-readable JSON output,
+ask,--write,,Allow the tool to edit files (default is read-only),routes.permission (read-only)
+ask,--path,P,Working folder or project id for the run,the working folder
+ask,--dry-run,,Show what would happen and change nothing,
+ask,--json,,Machine-readable JSON output,
+do,--tool,T,AI tool to use,routes.default_tool (claude)
+do,--machine,M,"Machine to run on (a name from [machines], or any)",routes.default_machine (this machine)
+do,--path,P,Working folder or project id for the run,the working folder
+do,--write,,Allow the tool to edit files (default is read-only),routes.permission (read-only)
+do,--bg,,run in a detached tmux session named mach-<slug>,off
+do,--yes,,Answer yes to the confirmation,
+do,--dry-run,,Show what would happen and change nothing,
+do,--json,,Machine-readable JSON output,
+docs,--apply,,Carry out the change; without it the command only previews,preview
+doctor,--json,,Machine-readable JSON output,
+doctor,--quiet,,print only warnings and failures,off
+flow,--dry-run,,Show what would happen and change nothing,
+flow,--queue,,Record the run as queued instead of executing it now,
+flow,--write,,Allow the tool to edit files (default is read-only),routes.permission (read-only)
+flow,--json,,Machine-readable JSON output,
+inventory,--host,H,Act on this host,this machine
+inventory,--section,S,regenerate only this section,all sections
+inventory,--light,,"skip the slow size, network and brew checks",on for macOS
+inventory,--full,,run the full generator,on for Linux
+inventory,--diff,,show the diff only,off
+inventory,--apply,,Carry out the change; without it the command only previews,preview
+mcp,--tool,T,AI tool to use,routes.default_tool (claude)
+mcp,--apply,,Carry out the change; without it the command only previews,preview
+memory,--reindex,,regenerate INDEX.md (only when it carries the mach marker),off
+memory,--apply,,Carry out the change; without it the command only previews,preview
+memory,--json,,Machine-readable JSON output,
+memory,--save,,write the review to the reviews folder as YYYY-MM.md,off
+names,--fix,,repair names that are not explicit,off (check only)
+names,--apply,,Carry out the change; without it the command only previews,preview
+note,--to,,destination (use when the text may start with a destination name),note.default
+note,-t,TITLE,note title,first words of the text
+note,--tag,X,tag to add (repeatable),none
+note,--tags,,comma-separated tags,none
+note,--project,P,Agenda project,note.agenda.project (Inbox)
+note,--date,D,"date for the note, YYYY-MM-DD",none
+note,--flag,,flag the note in the target app,off
+note,--open,,open the note in its app after capture,off
+note,--file,PATH,read the note text from this file,stdin or the text argument
+note,--dry-run,,Show what would happen and change nothing,
+note,--json,,Machine-readable JSON output,
+note,--apply,,Carry out the change; without it the command only previews,preview
+onboard,--apply,,Carry out the change; without it the command only previews,preview
+onboard,--skip-previews,,"skip the inventory, names, ai and mcp previews",off
+plans,--json,,Machine-readable JSON output,
+plans,--apply,,Carry out the change; without it the command only previews,preview
+plans,--force,,"Override a safety stop (cap, open boxes, already-exists)",
+queue,--due,today|YYYY-MM-DD,only items due on this date (today or YYYY-MM-DD),all
+queue,--json,,Machine-readable JSON output,
+research,--depth,quick|deep,"quick answers with sources, deep starts the research-to-plan flow",quick
+research,--tool,T,AI tool to use,routes.default_tool (claude)
+research,--dry-run,,Show what would happen and change nothing,
+research,--json,,Machine-readable JSON output,
+run,--dry-run,,Show what would happen and change nothing,
+run,--queue,,Record the run as queued instead of executing it now,
+run,--json,,Machine-readable JSON output,
+run,--tool,T,AI tool to use,routes.default_tool (claude)
+run,--path,P,Working folder or project id for the run,the working folder
+run,--machine,M,"Machine to run on (a name from [machines], or any)",routes.default_machine (this machine)
+run,--write,,Allow the tool to edit files (default is read-only),routes.permission (read-only)
+run,--inbox,,run every prompt document in files/inbox/prompts not yet run,off
+services,--update,,print a proposed patch for the 75/76 index files (never writes them),off
+sheets,--json,,Machine-readable JSON output,
+sheets,--dry-run,,Show what would happen and change nothing,
+sheets,--apply,,Carry out the change; without it the command only previews,preview
+sheets,--build,,"after refresh, also run build on the set",off
+sheets,--check,,"refresh: compare the generated files with the committed ones, write nothing, exit 1 on drift",off
+sheets,--out,DIR,refresh: write the generated files into this folder instead of docs/,docs/sheets and docs
+status,--status,S,only runs in this state,all
+status,-n,N,number of runs to show,10
+status,--all,,show every run,off
+status,--json,,Machine-readable JSON output,
+subsystem,--from,D,setup draft file to ingest (see ai-authored/templates),none
+subsystem,--apply,,Carry out the change; without it the command only previews,preview
+subsystem,--replace,,replace an existing manifest,off

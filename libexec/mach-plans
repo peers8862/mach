@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+# mach-summary: List plans with open/total checkbox counts; archive a finished plan (plans/README.md section 4)
+# mach-group: upkeep
+# mach-subcommands: list archive
+# mach-usage: mach plans list [--json]
+# mach-usage: mach plans archive <NN|file> [--apply] [--force]
+# mach-help: list shows each plans/NN-*.md with its Status line and open/total `- [ ]` boxes. Plans with every box ticked are
+# mach-help: marked "archive candidate" (the user's OK is still required: agents never archive on their own judgment).
+# mach-help: archive previews, then (only with --apply) performs the README section 4 steps: set the Status line to
+# mach-help: "done YYYY-MM-DD, archived"; mv the file to plans/archived/; fix references (plans/NN-name.md -> plans/archived/NN-name.md,
+# mach-help: other hits are listed for you); add the plan 00 Change log line; update the register row in plans/README.md.
+# mach-help: The docs-index step is printed, not run: mach docs --apply. Plan 00 is never archived. Open boxes need --force.
+# mach-help: Everything it edits is backed up first; a one-line rollback is printed.
+import argparse
+import os
+import re
+import sys
+import time
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+
+
+def plans_dir():
+    return os.path.join(mc.mf_root(), "plans")
+
+
+def count_boxes(text):
+    o = len(re.findall(r"^\s*[-*]\s+\[ \]", text, re.M))
+    d = len(re.findall(r"^\s*[-*]\s+\[[xX]\]", text, re.M))
+    return o, d
+
+
+def status_line(text):
+    for ln in text.splitlines():
+        if ln.startswith("Status:"):
+            return ln
+    return ""
+
+
+def list_plans():
+    out = []
+    d = plans_dir()
+    if not os.path.isdir(d):
+        return out
+    for fn in sorted(os.listdir(d)):
+        m = re.match(r"^(\d\d)-.*\.md$", fn)
+        if not m:
+            continue
+        text = mc.read_text(os.path.join(d, fn))
+        o, c = count_boxes(text)
+        out.append({"number": m.group(1), "file": fn, "open": o, "done": c, "total": o + c, "status": status_line(text)})
+    return out
+
+
+def find_plan(arg):
+    d = plans_dir()
+    if re.match(r"^\d{1,2}$", arg):
+        nn = "%02d" % int(arg)
+        for fn in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if fn.startswith(nn + "-") and fn.endswith(".md"):
+                return nn, fn
+        return None, None
+    fn = os.path.basename(arg)
+    m = re.match(r"^(\d\d)-.*\.md$", fn)
+    if m and os.path.isfile(os.path.join(d, fn)):
+        return m.group(1), fn
+    return None, None
+
+
+TEXT_SKIP_DIRS = (".git", "node_modules", ".stversions", ".stfolder", "raw", "archived", "backups", ".tmp", "__pycache__")
+
+
+def reference_hits(fn):
+    """Files (outside plans/archived) that mention the plan. Returns list of (path, kind, line_no, line)."""
+    stem = fn
+    hits = []
+    full_re = re.compile(r"(?<!archived/)plans/" + re.escape(stem))
+    bare_re = re.compile(r"(?<![\w/.-])" + re.escape(stem))
+    root = mc.mf_root()
+    for dp, dn, fns in os.walk(root):
+        dn[:] = [d for d in dn if d not in TEXT_SKIP_DIRS and os.path.relpath(os.path.join(dp, d), root) != "drafts"]
+        for f in fns:
+            p = os.path.join(dp, f)
+            if f == "docs-index.csv" or f.endswith(".xlsx"):
+                continue
+            try:
+                if os.path.getsize(p) > 2 * 1024 * 1024:
+                    continue
+                with open(p, "r", encoding="utf-8") as fh:
+                    lines = fh.read().split("\n")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for i, ln in enumerate(lines, 1):
+                if full_re.search(ln):
+                    hits.append((p, "fix", i, ln))
+                elif bare_re.search(ln) and os.path.abspath(p) != os.path.abspath(os.path.join(plans_dir(), fn)):
+                    hits.append((p, "check", i, ln))
+    return hits
+
+
+def register_row(readme_text, nn, fn):
+    for ln in readme_text.split("\n"):
+        if ln.startswith("| %s |" % nn):
+            return ln
+    return None
+
+
+def changelog_insert(text, entry):
+    lines = text.split("\n")
+    start = next((i for i, ln in enumerate(lines) if re.match(r"^##\s+Change log", ln)), None)
+    if start is None:
+        return text.rstrip("\n") + "\n\n## Change log\n\n" + entry + "\n", False
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if re.match(r"^##\s+", lines[i]) and not lines[i].startswith("###"):
+            end = i
+            break
+    body = lines[:end]
+    while body and body[-1].strip() == "":
+        body.pop()
+    new = body + entry.split("\n") + [""] + lines[end:]
+    return "\n".join(new), True
+
+
+def cmd_list(js):
+    ps = list_plans()
+    if js:
+        mc.emit_json(ps)
+        return 0
+    if not ps:
+        print("no plans found in %s" % mc.tilde(plans_dir()))
+        return 0
+    print("%-3s %-44s %-9s %s" % ("NN", "file", "open/total", "status"))
+    for p in ps:
+        cand = "  <- archive candidate (all boxes ticked; needs your OK)" if p["total"] and not p["open"] and p["number"] != "00" else ""
+        print("%-3s %-44s %4d/%-5d %s%s" % (p["number"], p["file"], p["open"], p["total"], mc.truncate(p["status"].replace("Status:", "").strip(), 40), cand))
+    return 0
+
+
+def cmd_archive(arg, apply, yes, force):
+    nn, fn = find_plan(arg)
+    if nn is None:
+        mc.die("no plan matches %r in %s" % (arg, mc.tilde(plans_dir())))
+    if nn == "00":
+        mc.die("plan 00 is the master plan and is never archived")
+    src = os.path.join(plans_dir(), fn)
+    adir = os.path.join(plans_dir(), "archived")
+    dest = os.path.join(adir, fn)
+    if os.path.exists(dest):
+        mc.die("%s already exists: refusing to overwrite" % mc.tilde(dest))
+    text = mc.read_text(src)
+    o, c = count_boxes(text)
+    if o and not force:
+        mc.die("plan %s still has %d open box(es) of %d: tick them, mark them dropped/moved, or pass --force" % (nn, o, o + c))
+    date = mc.now().strftime("%Y-%m-%d")
+    old_status = status_line(text)
+    new_status = "Status: **done %s, archived**" % date
+    print("archive plan %s (%s): %d open, %d ticked box(es)%s" % (nn, fn, o, c, "  [--force]" if o else ""))
+    print("1. status line:\n   - %s\n   + %s\n   + Follow-ups: none recorded (edit this line if any item moved to another plan)" % (old_status or "(no Status: line found)", new_status))
+    print("2. move: %s -> %s" % (mc.tilde(src), mc.tilde(dest)))
+    hits = reference_hits(fn)
+    fixes = [h for h in hits if h[1] == "fix"]
+    checks = [h for h in hits if h[1] == "check"]
+    print("3. references: %d to repoint (plans/%s -> plans/archived/%s), %d to check by hand" % (len(fixes), fn, fn, len(checks)))
+    for p, _k, i, ln in fixes[:15]:
+        print("   fix   %s:%d  %s" % (os.path.relpath(p, mc.mf_root()), i, mc.truncate(ln.strip(), 90)))
+    for p, _k, i, ln in checks[:10]:
+        print("   check %s:%d  %s" % (os.path.relpath(p, mc.mf_root()), i, mc.truncate(ln.strip(), 90)))
+    tz = time.strftime("%Z") or "ET"
+    entry = "### %s %s (%s): archived plan %s (%s)\n- Plan %s is done (every item ticked or marked dropped/moved) and the user agreed; moved to plans/archived/." % (
+        mc.now().strftime("%Y-%m-%d %H:%M"), tz, mc.host(), nn, fn[3:-3], nn)
+    plan0 = next((f for f in os.listdir(plans_dir()) if f.startswith("00-") and f.endswith(".md")), None)
+    print("4. plan 00 change-log line:\n   " + entry.replace("\n", "\n   "))
+    readme = os.path.join(plans_dir(), "README.md")
+    row = register_row(mc.read_text(readme), nn, fn)
+    new_row = None
+    if row:
+        cells = [x.strip() for x in row.strip().strip("|").split("|")]
+        if len(cells) >= 4:
+            cells[1] = "`archived/%s`" % fn
+            cells[3] = "done %s, archived" % date
+            new_row = "| " + " | ".join(cells) + " |"
+    print("5. register (plans/README.md section 2):\n   - %s\n   + %s" % (row or "(no row for %s found)" % nn, new_row or "(nothing to change)"))
+    print("6. docs index: run `mach docs --apply` afterwards (collect.py records plans/archived/ files as retired). Not run automatically.")
+    if not mc.should_apply(apply, yes, "Archive plan %s now?" % nn):
+        print("\npreview only: nothing was changed. Run again with --apply (you are confirming the user's OK).")
+        return 0
+    bk = mc.Backup("plans")
+    bk.save(src)
+    bk.created(dest)
+    os.makedirs(adir, exist_ok=True)
+    lines = text.split("\n")
+    if old_status:
+        i = lines.index(old_status)
+        lines[i:i + 1] = [new_status, "", "Follow-ups: none recorded (edit this line if any item moved to another plan)."]
+    else:
+        lines[0:0] = [new_status, "Follow-ups: none recorded.", ""]
+    mc.write_text(dest, "\n".join(lines))
+    os.remove(src)
+    touched = set()
+    for p, _k, _i, _ln in fixes:
+        if p == src or p in touched:
+            continue
+        touched.add(p)
+    for p in sorted(touched):
+        bk.save(p)
+        body = mc.read_text(p)
+        body = re.sub(r"(?<!archived/)plans/" + re.escape(fn), "plans/archived/" + fn, body)
+        mc.write_text(p, body)
+    if plan0:
+        p0 = os.path.join(plans_dir(), plan0)
+        if p0 not in touched:
+            bk.save(p0)
+        new0, found = changelog_insert(mc.read_text(p0), entry)
+        mc.write_text(p0, new0)
+        if not found:
+            print("note: plan 00 had no '## Change log' section; one was added at the end")
+    if new_row:
+        if readme not in touched:
+            bk.save(readme)
+        mc.write_text(readme, mc.read_text(readme).replace(row, new_row))
+    print("\narchived plan %s: moved, %d file(s) repointed, change log and register updated." % (nn, len(touched)))
+    bk.finish()
+    print("next: mach docs --apply   (docs index; the workbook only on request)")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach plans", add_help=False)
+    ap.add_argument("sub", choices=["list", "archive"])
+    ap.add_argument("plan", nargs="?")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--yes", "-y", action="store_true")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    if a.sub == "list":
+        return cmd_list(a.json or mc.env_flag("MACH_JSON"))
+    if not a.plan:
+        mc.die("usage: mach plans archive <NN|file> [--apply]")
+    return cmd_archive(a.plan, a.apply, a.yes, a.force)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

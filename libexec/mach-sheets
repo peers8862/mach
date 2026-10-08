@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+# mach-summary: Sheet sets: lint, build (CSVs -> xlsx), scaffold and refresh a folder of index.csv + CSV files + a generated workbook
+# mach-group: upkeep
+# mach-subcommands: lint build new refresh
+# mach-writes: yes lint=no
+# mach-flag: --build | after refresh, also run build on the set | off
+# mach-flag: --check | refresh: compare the generated files with the committed ones, write nothing, exit 1 on drift | off
+# mach-flag: --out | refresh: write the generated files into this folder instead of docs/ | docs/sheets and docs
+# mach-usage: mach sheets lint <dir> [--json]
+# mach-usage: mach sheets build <dir> [--dry-run] [--json]
+# mach-usage: mach sheets new <dir> [--apply]
+# mach-usage: mach sheets refresh <set> [--build] [--check] [--dry-run] [--out DIR]
+# mach-help: A sheet set is a folder with index.csv (columns: id, file, sheet_name, title, description, owner, source, generated_by,
+# mach-help: updated, rows), the CSV files it lists and <name>.xlsx, a workbook generated from them (Index sheet first, then one sheet
+# mach-help: per CSV, frozen bold header, autofilter). The CSVs are the source of truth; edit them, never the workbook.
+# mach-help: lint checks the set (every CSV indexed, every listed file there, rows and updated right, sheet names unique and at most 31
+# mach-help: characters, Excel-safe cells, workbook current); exit 0 OK, 1 warnings, 2 failures.
+# mach-help: build is the explicit action, so it writes: it fixes rows/updated in index.csv, then writes the workbook (backups first;
+# mach-help: --dry-run only reports). The workbook is reproducible (same input, same bytes) and needs no install (no openpyxl).
+# mach-help: new previews, then (--apply) scaffolds an empty set: index.csv with the header row plus a README.md.
+# mach-help: refresh mach regenerates the CSVs of docs/sheets and docs/COMMANDS-TABLE.md from the code and headers (then run build);
+# mach-help: the set name `mach` is the only generated set. --check is the drift check used by the tests.
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_sheets as sh  # noqa: E402
+
+GENERATED_SETS = ["mach"]
+
+
+def report(results, js, label):
+    """Print lint results; return the exit code (0 OK, 1 warnings, 2 failures)."""
+    fails = [m for lv, m in results if lv == "FAIL"]
+    warns = [m for lv, m in results if lv == "WARN"]
+    if js:
+        mc.emit_json({"dir": label, "results": [{"level": lv, "message": m} for lv, m in results]})
+    else:
+        for lv, m in results:
+            print("%s %s" % (lv, m))
+    return 2 if fails else 1 if warns else 0
+
+
+def cmd_lint(a):
+    js = a.json or mc.env_flag("MACH_JSON")
+    results = sh.lint_set(a.target)
+    rc = report(results, js, a.target)
+    if rc == 0 and not js:
+        entries, _ = sh.load_entries(a.target)
+        print("OK sheet set %s: %d CSV files, %d data rows, workbook %s current" % (
+            a.target, len(entries), sum(e.count for e in entries), os.path.basename(sh.workbook_path(a.target))))
+    return rc
+
+
+def write_atomic(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as fh:
+        fh.write(data)
+    os.replace(tmp, path)
+
+
+def do_build(d, dry, js, bk=None):
+    if not os.path.isdir(d):
+        mc.die("%s is not a folder" % d)
+    problems, plan = sh.plan_build(d, mc.now().strftime("%Y-%m-%d"))
+    if problems:
+        rc = report([("FAIL", p) for p in problems], js, d)
+        if not js:
+            print("not built: fix the failures above first")
+        return rc
+    changes = plan["changes"]
+    if dry:
+        if js:
+            mc.emit_json({"dir": d, "dry_run": True, "changes": changes, "sheets": [s["name"] for s in plan["sheets"]]})
+        else:
+            for c in changes:
+                print("would change " + c)
+            print("dry-run: nothing written" if changes else "up to date: nothing to write")
+        return 0
+    own_backup = bk is None
+    bk = bk or mc.Backup("sheets")
+    if not plan["old_index_same"]:
+        ipath = os.path.join(d, "index.csv")
+        bk.save(ipath)
+        with open(ipath, "w", encoding="utf-8", newline="") as fh:
+            fh.write(plan["index_text"])
+    if not plan["old_blob_same"]:
+        bk.save(plan["xlsx_path"])
+        write_atomic(plan["xlsx_path"], plan["xlsx_bytes"])
+    post = sh.lint_set(d)
+    if js:
+        mc.emit_json({"dir": d, "changes": changes, "sheets": [s["name"] for s in plan["sheets"]], "lint": [{"level": lv, "message": m} for lv, m in post]})
+    else:
+        for c in changes:
+            print("changed " + c)
+        print("%s: %s (%s)" % (os.path.join(d, os.path.basename(plan["xlsx_path"])),
+                               "written" if changes else "up to date", ", ".join(s["name"] for s in plan["sheets"])))
+        for lv, m in post:
+            print("%s %s" % (lv, m))
+        if changes and own_backup:
+            bk.finish()
+    return 2 if any(lv == "FAIL" for lv, _ in post) else 0
+
+
+def cmd_new(a):
+    d = a.target
+    if os.path.exists(d) and not os.path.isdir(d):
+        mc.die("%s exists and is not a folder" % d)
+    if os.path.exists(os.path.join(d, "index.csv")):
+        mc.die("%s already has an index.csv (it is already a sheet set; use: mach sheets lint %s)" % (d, d))
+    files = sh.scaffold(d)
+    todo = [(n, t) for n, t in sorted(files.items()) if not os.path.exists(os.path.join(d, n))]
+    for n, _ in todo:
+        print("%s %s" % ("create", os.path.join(d, n)))
+    for n in sorted(files):
+        if n not in dict(todo):
+            print("keep   %s (exists)" % os.path.join(d, n))
+    if not mc.should_apply(a.apply, prompt="Create these files?"):
+        print("preview only: add --apply to create them")
+        return 0
+    bk = mc.Backup("sheets")
+    if not os.path.isdir(d):
+        os.makedirs(d)
+        bk.created_dir(d)
+    for n, t in todo:
+        p = os.path.join(d, n)
+        mc.write_text(p, t)
+        bk.created(p)
+    print("created sheet set %s: add rows to index.csv and your CSVs, then: mach sheets lint %s && mach sheets build %s" % (d, d, d))
+    bk.finish()
+    return 0
+
+
+def desired_files(out_dir, md_dir, gen, md):
+    """{path: text} for the refresh, plus the list of CSVs skipped because their source is missing."""
+    import mach_sheets_gen as g
+    index_path = os.path.join(out_dir, "index.csv")
+    _h, old_rows, _e = sh.read_index(out_dir) if os.path.isfile(index_path) else ([], [], [])
+    old = dict((r.get("file", ""), r) for r in old_rows)
+    files, skipped, rows = {}, [], []
+    for meta in g.index_meta():
+        got = gen.get(meta["file"])
+        prev = old.get(meta["file"], {})
+        if got is None:
+            skipped.append(meta["file"])
+            count = prev.get("rows", "")
+        else:
+            files[os.path.join(out_dir, meta["file"])] = sh.write_csv_text(got[0], got[1])
+            count = str(len(got[1]))
+        row = dict(meta, updated=prev.get("updated", ""), rows=count)
+        rows.append([row[c] for c in sh.INDEX_COLS])
+    files[index_path] = sh.write_csv_text(sh.INDEX_COLS, rows)
+    cfg = os.path.join(out_dir, sh.CONFIG_FILE)
+    if not os.path.exists(cfg):
+        files[cfg] = 'workbook = "mach"\n'
+    files[os.path.join(md_dir, "COMMANDS-TABLE.md")] = md
+    return files, skipped
+
+
+def cmd_refresh(a):
+    import mach_sheets_gen as g
+    if a.target not in GENERATED_SETS:
+        mc.die("unknown generated set %r (known: %s)" % (a.target, ", ".join(GENERATED_SETS)))
+    home = mc.mach_home()
+    out_dir = a.out or os.path.join(home, "docs", "sheets")
+    md_dir = a.out or os.path.join(home, "docs")
+    gen, md = g.generate(home, mc.mf_root())
+    files, skipped = desired_files(out_dir, md_dir, gen, md)
+    changed = []
+    for path, text in sorted(files.items()):
+        old = mc.read_text(path, None) if os.path.isfile(path) else None
+        if old != text:
+            changed.append((path, old is None))
+    for fn in skipped:
+        print("skipped %s: its source is outside the repo and was not found" % fn)
+    if a.check:
+        for path, _new in changed:
+            print("DRIFT %s" % os.path.relpath(path, home) if sh_inside(path, home) else "DRIFT %s" % path)
+        print("no drift: %d generated files match" % len(files) if not changed else "drift in %d of %d generated files; run: mach sheets refresh mach" % (len(changed), len(files)))
+        return 1 if changed else 0
+    dry = a.dry_run or mc.env_flag("MACH_DRY_RUN")
+    for path, new in changed:
+        print("%s %s" % ("would write" if dry else "write", os.path.relpath(path, home) if sh_inside(path, home) else path))
+    if not changed:
+        print("up to date: %d generated files unchanged" % len(files))
+    elif not dry:
+        bk = mc.Backup("sheets")
+        for path, new in changed:
+            if new:
+                bk.created(path)
+            else:
+                bk.save(path)
+            mc.write_text(path, files[path])
+        rc = do_build(out_dir, False, False, bk) if a.build else 0
+        bk.finish()
+        return rc
+    if a.build and not dry:
+        return do_build(out_dir, False, False)
+    if changed and not a.build:
+        print("next: mach sheets build %s" % (os.path.relpath(out_dir, os.getcwd()) if sh_inside(out_dir, os.getcwd()) else out_dir))
+    return 0
+
+
+def sh_inside(path, root):
+    return mc.is_inside(path, root)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach sheets")
+    ap.add_argument("verb", choices=["lint", "build", "new", "refresh"])
+    ap.add_argument("target", help="sheet set folder (lint, build, new) or generated set name (refresh)")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--build", action="store_true")
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--out")
+    a = ap.parse_args()
+    js = a.json or mc.env_flag("MACH_JSON")
+    if a.verb == "lint":
+        return cmd_lint(a)
+    if a.verb == "build":
+        return do_build(a.target, a.dry_run or mc.env_flag("MACH_DRY_RUN"), js)
+    if a.verb == "new":
+        return cmd_new(a)
+    return cmd_refresh(a)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError) as exc:
+        mc.eprint("mach: sheets: " + str(exc))
+        sys.exit(2)

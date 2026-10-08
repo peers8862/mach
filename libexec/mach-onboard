@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# mach-summary: Checklist for a new machine: prerequisites, link mach, Syncthing pairing, then previews
+# mach-group: upkeep
+# mach-flag: --skip-previews | skip the inventory, names, ai and mcp previews | off
+# mach-usage: mach onboard [--apply] [--skip-previews]
+# mach-help: Checks prerequisites (bash, python3 >= 3.9, git; syncthing and tmux), that ~/.local/bin is on PATH, and whether mach
+# mach-help: is linked. Prints the Syncthing pairing steps (text only: mach never touches Syncthing). Then runs, in PREVIEW mode:
+# mach-help: mach inventory, mach names, mach ai apply, mach mcp render (--skip-previews skips them; inventory can take a while).
+# mach-help: --apply performs ONE change: it runs install.sh --apply to link ~/.local/bin/mach -> <this checkout>/bin/mach.
+# mach-help: Exit codes: 0 all prerequisites met, 1 something optional/missing, 2 a hard prerequisite is missing.
+set -u
+MACH_HOME=${MACH_HOME:-$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# shellcheck source=/dev/null
+. "$MACH_HOME/lib/common.sh"
+
+APPLY=0; SKIP=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply) APPLY=1 ;;
+    --skip-previews) SKIP=1 ;;
+    --yes|-y) APPLY=1 ;;
+    --dry-run) ;;
+    *) die "unknown option: $1 (try: mach onboard --help)" ;;
+  esac
+  shift
+done
+
+STATUS=0
+HOST=$(mach_host)
+printf '== mach onboard: %s (%s) ==\n\n1. Prerequisites\n' "$HOST" "$(mach_os)"
+
+ok "bash ${BASH_VERSION%%(*}"
+if PY=$(mach_python); then
+  ok "python3 $("$PY" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])') ($PY)"
+else
+  fail "python3 >= 3.9 not found: install it (Mac: Xcode command line tools provide 3.9)"
+  STATUS=2
+fi
+if command -v git >/dev/null 2>&1; then ok "git $(git --version | awk '{print $3}')"; else fail "git not found"; STATUS=2; fi
+if command -v syncthing >/dev/null 2>&1 || [ -x "$HOME/.local/bin/syncthing" ] || [ -d "/Applications/Syncthing.app" ]; then
+  ok "syncthing present"
+else
+  warn "syncthing not found (needed to sync ~/machine-flows)"; [ "$STATUS" = 2 ] || STATUS=1
+fi
+if command -v "${MACH_TMUX:-tmux}" >/dev/null 2>&1; then ok "tmux present (needed for: mach do --bg)"; else info "tmux not found (optional; only 'mach do --bg' needs it)"; fi
+
+printf '\n2. PATH and the mach link\n'
+BIN=${MACH_BIN_DIR:-$HOME/.local/bin}
+case ":$PATH:" in
+  *":$BIN:"*) ok "$(mach_tilde "$BIN") is on PATH" ;;
+  *) warn "$(mach_tilde "$BIN") is not on PATH: add  export PATH=\"$(mach_tilde "$BIN"):\$PATH\"  to your shell profile"; [ "$STATUS" = 2 ] || STATUS=1 ;;
+esac
+if [ "$APPLY" = 1 ]; then
+  bash "$MACH_HOME/install.sh" --apply || { err "install.sh failed"; STATUS=2; }
+else
+  bash "$MACH_HOME/install.sh" || true
+  printf 'preview only: run  mach onboard --apply  (or bash %s --apply) to create the link\n' "$(mach_tilde "$MACH_HOME/install.sh")"
+fi
+
+cat <<'EOF'
+
+3. Syncthing pairing (manual; mach does not touch Syncthing)
+   a. Install Syncthing and start it at login (Linux: a systemd user unit with linger; macOS: a LaunchAgent). Record that
+      service in inventory/<host>/75-custom-startup-services.md.
+   b. On this machine's Syncthing GUI (127.0.0.1:8384) copy its Device ID; on an existing machine add it as a remote device
+      and share the folder "machine-flows" (folder ID machine-flows) to it. Accept the share here, folder path ~/machine-flows.
+   c. Create this machine's own ~/machine-flows/.stignore containing only the line:  #include .stglobalignore
+   d. Wait until both machines show the folder as "Up to Date"; then run: mach doctor
+EOF
+
+if [ "$SKIP" = 1 ]; then
+  printf '\n4. Previews skipped (--skip-previews)\n'
+else
+  printf '\n4. Previews (nothing is written)\n'
+  for step in "inventory" "names" "ai apply" "mcp render"; do
+    printf -- '-- mach %s\n' "$step"
+    # shellcheck disable=SC2086
+    "$MACH_HOME/bin/mach" $step 2>&1 | sed 's/^/   /'
+  done
+fi
+printf '\nnext: mach doctor   (all checks), mach help   (everything else)\n'
+exit "$STATUS"

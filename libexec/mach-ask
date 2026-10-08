@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+# mach-summary: Send a prompt straight to one named tool in headless mode (read-only by default)
+# mach-group: gateway
+# mach-writes: yes
+# mach-usage: mach ask <tool> "<prompt>" [--write] [--path P] [--dry-run] [--json]
+# mach-help: Tools (explicit names only): claude, codex, cursor-agent, grokcli-agent, kiro (runs kiro-cli), grokbot.
+# mach-help: There is no bare `agent` command. The answer goes to stdout and to a run record in files/runs/.
+# mach-help: grokbot has no CLI: mach writes a paste-ready prompt file and a queued run item (nothing is automated).
+# mach-help: Headless flags (checked with each CLI's --help): claude -p --permission-mode plan; codex exec --sandbox read-only;
+# mach-help: cursor-agent -p --mode ask; kiro-cli chat --no-interactive --trust-tools=; grokcli-agent -p (best guess, see docs/DECISIONS.md).
+# mach-help: --dry-run prints the exact command with the prompt truncated and runs nothing. A missing tool exits 2.
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+import mach_exec as ex  # noqa: E402
+
+TARGETS = mc.KNOWN_TOOLS + ["grokbot"]
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach ask", add_help=False)
+    ap.add_argument("tool")
+    ap.add_argument("prompt", nargs="+")
+    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--path")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    dry = a.dry_run or mc.env_flag("MACH_DRY_RUN")
+    js = a.json or mc.env_flag("MACH_JSON")
+    rep = ex.Reporter(js)
+    prompt = " ".join(a.prompt).strip()
+    tool = a.tool
+    if tool == "agent":
+        mc.die("there is no bare `agent` command here: use cursor-agent (Cursor) or grokcli-agent (grok)")
+    if tool not in TARGETS:
+        mc.die("unknown tool %r: use one of %s" % (tool, ", ".join(TARGETS)))
+    work = ex.resolve_path(a.path) if a.path else os.getcwd()
+    if tool == "grokbot":
+        if dry:
+            rep.say("dry-run: would write a paste-ready prompt file and a queued run item for grokbot (%d chars)" % len(prompt))
+            return 0
+        run = mr.new_run(cfg, kind="ask", title=prompt, tool="grokbot", path=work, input_text=prompt, status="queued")
+        text = "<!-- Paste this into Grok Bot (the app has no CLI; mach automates nothing) -->\n\n%s\n\n(Working folder on %s: %s)\n" % (prompt, mc.host(), mc.tilde(work))
+        mc.write_text(run.path_of("prompt-for-grokbot.md"), text)
+        run.add_output("prompt-for-grokbot.md")
+        run.set_step(1, step="paste into Grok Bot", tool="grokbot", status="pending", output="prompt-for-grokbot.md")
+        run.note("queued: paste %s into the Grok Bot app, then `mach reject %s \"done\"` to clear it" % ("prompt-for-grokbot.md", run.id))
+        run.save()
+        rep.say("paste-ready prompt: %s" % mc.tilde(run.path_of("prompt-for-grokbot.md")))
+        rep.say("queued %s (see: mach queue)" % run.id)
+        if js:
+            mc.emit_json({"id": run.id, "status": "queued", "prompt_file": mc.tilde(run.path_of("prompt-for-grokbot.md"))})
+        return 0
+    argv, pidx, note = mc.tool_argv(tool, prompt, write=a.write, cfg=cfg)
+    if dry:
+        rep.say("dry-run: %s  (%s)" % (mc.shown_cmd(argv, pidx), "write" if a.write else "read-only"))
+        if note:
+            rep.say("note: " + note)
+        if not mc.tool_available(tool, cfg):
+            rep.say("note: %s is not on PATH here" % mc.tool_binary_name(tool, cfg))
+        return 0
+    ex.require_tool(tool, cfg, rep)
+    run = mr.new_run(cfg, kind="ask", title=prompt, tool=tool, path=work, input_text=prompt, status="running",
+                     extra={"permission": "write" if a.write else "read-only"})
+    run.set_step(1, step="ask", tool=tool, status="running")
+    run.save()
+    rc, _text, outname = ex.exec_ai(run, 1, tool, prompt, work, a.write, cfg, stream=not js)
+    if rc != 0:
+        run.set_step(1, status="failed", output=outname)
+        run.set_status("failed", reason="%s exited %d" % (tool, rc))
+        mc.eprint("mach: %s exited %d (run %s)" % (tool, rc, run.id))
+        return mc.EXIT_FAIL
+    run.set_step(1, status="done", output=outname)
+    run.set_status("done")
+    if js:
+        mc.emit_json({"id": run.id, "status": "done", "outputs": run.meta.get("outputs", []), "run_dir": mc.tilde(run.dir)})
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

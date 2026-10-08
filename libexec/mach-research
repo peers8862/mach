@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# mach-summary: Answer a question with sources (quick), or start the research-to-plan flow (deep)
+# mach-group: gateway
+# mach-writes: yes
+# mach-flag: --depth | quick answers with sources, deep starts the research-to-plan flow | quick
+# mach-usage: mach research "<question>" [--depth quick|deep] [--tool T] [--dry-run] [--json]
+# mach-help: quick (default): one headless read-only tool call; mach writes files/research/<date>-<slug>.md with a Sources section.
+# mach-help: deep: starts the research-to-plan flow (research -> gate -> plan draft -> gate -> register handoff).
+# mach-help: --dry-run prints the exact command / flow steps and writes nothing. Records a run in files/runs/.
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_runs as mr  # noqa: E402
+import mach_exec as ex  # noqa: E402
+
+PROMPT = ("Research question: {q}\n\nAnswer with web research. Lead with the answer, then the evidence. Cite every source with a link "
+          "and the date checked. End with a '## Sources' section listing each link. Say plainly what you could not verify.")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="mach research", add_help=False)
+    ap.add_argument("question", nargs="+")
+    ap.add_argument("--depth", default="quick", choices=["quick", "deep"])
+    ap.add_argument("--tool")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    cfg = mc.load_config_or_warn()
+    dry = a.dry_run or mc.env_flag("MACH_DRY_RUN")
+    js = a.json or mc.env_flag("MACH_JSON")
+    rep = ex.Reporter(js)
+    q = " ".join(a.question).strip()
+    if a.depth == "deep":
+        rec, src = ex.load_recipe("research-to-plan")
+        if rec is None:
+            mc.die("research-to-plan recipe not found")
+        if dry:
+            rep.say("dry-run: deep research starts the research-to-plan flow (%s)" % mc.tilde(src))
+            ex.describe_recipe(rep, rec, q, cfg)
+            return 0
+        _run, rc = ex.start_flow(cfg, "research-to-plan", q, rep, json_mode=js)
+        return rc
+    rt = ex.route(cfg, tool=a.tool, path=mc.mf_root())
+    tool = rt["tool"]
+    prompt = PROMPT.format(q=q)
+    argv, pidx, note = mc.tool_argv(tool, prompt, write=False, cfg=cfg)
+    date = mc.now().strftime("%Y-%m-%d")
+    outpath = os.path.join(mc.mf_root(), "files", "research", "%s-%s.md" % (date, mc.slugify(q, 40)))
+    if dry:
+        rep.say("dry-run: tool %s, read-only, working dir %s" % (tool, mc.tilde(rt["path"])))
+        rep.say("  " + mc.shown_cmd(argv, pidx))
+        rep.say("  would write %s" % mc.tilde(outpath))
+        return 0
+    ex.require_tool(tool, cfg, rep)
+    run = mr.new_run(cfg, kind="research", title=q, tool=tool, path=rt["path"], input_text=q, status="running",
+                     extra={"permission": "read-only", "depth": "quick"})
+    run.set_step(1, step="research", tool=tool, status="running")
+    run.save()
+    rc, text, outname = ex.exec_ai(run, 1, tool, prompt, rt["path"], False, cfg, stream=False)
+    if rc != 0:
+        run.set_step(1, status="failed", output=outname)
+        run.set_status("failed", reason="%s exited %d" % (tool, rc))
+        mc.eprint("mach: %s exited %d (run %s)" % (tool, rc, run.id))
+        return mc.EXIT_FAIL
+    body = text.rstrip()
+    if "## sources" not in body.lower():
+        body += "\n\n## Sources\n\n(the tool returned no Sources section: treat the claims above as unverified)"
+    doc = "# %s\n\n_Researched %s on %s with %s (run %s)._\n\n%s\n" % (q, date, mc.host(), tool, run.id, body)
+    written = ex.write_output_file(outpath, doc)
+    run.meta["outputs"] = list(run.meta.get("outputs", [])) + [mc.tilde(written)]
+    run.set_step(1, status="done", output=outname)
+    run.set_status("done")
+    if js:
+        mc.emit_json({"id": run.id, "status": "done", "file": mc.tilde(written)})
+    else:
+        rep.say(text.rstrip())
+        rep.say("")
+        rep.say("wrote %s" % mc.tilde(written))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

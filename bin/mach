@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# mach: the machine-flows CLI. Dispatches `mach <command> [args]` to libexec/mach-<command>.
+# Help text comes from header comments in each libexec script (mach-summary / mach-usage / mach-help / mach-group).
+# bash 3.2 compatible (macOS 12).
+set -u
+
+# --- find our real directory, even when invoked through the ~/.local/bin/mach symlink (no readlink -f) ---
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir=$(cd -P "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+MACH_HOME=$(cd -P "$(dirname "$src")/.." && pwd)
+export MACH_HOME
+LIBEXEC="$MACH_HOME/libexec"
+# shellcheck source=/dev/null
+. "$MACH_HOME/lib/common.sh"
+
+VERSION=$(cat "$MACH_HOME/VERSION" 2>/dev/null || echo unknown)
+
+hdr() {
+  # hdr <file> <key>: print the text after "# mach-<key>:" for every matching header line
+  sed -n "s/^# mach-$2: \{0,1\}//p" "$1"
+}
+
+list_commands() {
+  # prints "group<TAB>name" for every command script with a summary header
+  local f name group
+  for f in "$LIBEXEC"/mach-*; do
+    [ -f "$f" ] || continue
+    name=${f##*/mach-}
+    case "$name" in *.*) continue ;; esac
+    [ -n "$(hdr "$f" summary)" ] || continue
+    group=$(hdr "$f" group | head -n 1)
+    printf '%s\t%s\n' "${group:-other}" "$name"
+  done
+}
+
+print_command_help() {
+  local name="$1" f="$LIBEXEC/mach-$1"
+  printf 'mach %s: %s\n\n' "$name" "$(hdr "$f" summary | head -n 1)"
+  printf 'Usage:\n'
+  hdr "$f" usage | sed 's/^/  /'
+  if [ -n "$(hdr "$f" help)" ]; then
+    printf '\n'
+    hdr "$f" help
+  fi
+  printf '\nGlobal options (before the command): --json  --dry-run  --host H  --version  --help\n'
+  printf 'Exit codes: 0 OK, 1 warnings, 2 failure, 3 waiting for approval.\n'
+}
+
+print_general_help() {
+  local group label line
+  printf 'mach %s: the machine-flows CLI (upkeep + work gateway)\n\n' "$VERSION"
+  printf 'Usage: mach [--json] [--dry-run] [--host H] <command> [args]\n'
+  printf '       mach help [command]      mach <command> --help\n\n'
+  for group in upkeep gateway other; do
+    case "$group" in
+      upkeep) label="Upkeep (keeps the machines healthy)" ;;
+      gateway) label="Work gateway (takes work in, tracks it)" ;;
+      *) label="Other" ;;
+    esac
+    line=$(list_commands | awk -F'\t' -v g="$group" '$1 == g { print $2 }' | sort)
+    [ -n "$line" ] || continue
+    printf '%s:\n' "$label"
+    printf '%s\n' "$line" | while IFS= read -r name; do
+      printf '  %-10s %s\n' "$name" "$(hdr "$LIBEXEC/mach-$name" summary | head -n 1)"
+    done
+    printf '\n'
+  done
+  printf 'Exit codes: 0 OK, 1 warnings, 2 failure, 3 waiting for approval.\n'
+  printf 'Administrative changes preview first and act with --apply; subsystem sends execute immediately.\n'
+}
+
+print_markdown() {
+  # docs/COMMANDS.md is generated from the headers: mach help --markdown > docs/COMMANDS.md
+  local group name f
+  local bt='`' summary
+  printf '# mach command reference\n\n'
+  printf 'Generated from the command headers by %smach help --markdown%s (mach %s). Do not edit by hand.\n\n' "$bt" "$bt" "$VERSION"
+  printf 'Global options go before the command: %s--json%s, %s--dry-run%s, %s--host H%s, %s--version%s, %s--help%s.\n' "$bt" "$bt" "$bt" "$bt" "$bt" "$bt" "$bt" "$bt" "$bt" "$bt"
+  printf 'Exit codes: 0 OK, 1 warnings, 2 failure, 3 waiting for approval. Administrative changes preview first and act with %s--apply%s; subsystem sends execute immediately.\n\n' "$bt" "$bt"
+  for group in upkeep gateway other; do
+    list_commands | awk -F'\t' -v g="$group" '$1 == g { print $2 }' | sort | while IFS= read -r name; do
+      f="$LIBEXEC/mach-$name"
+      summary=$(hdr "$f" summary | head -n 1)
+      # <placeholders> in prose would be read as HTML tags by previews: put them in code spans (unless the line already has code)
+      # shellcheck disable=SC2016  # the backticks are literal markdown
+      case "$summary" in *"$bt"*) ;; *) summary=$(printf '%s' "$summary" | sed -E 's/<([^<>[:space:]][^<>]*)>/`<\1>`/g') ;; esac
+      printf '## mach %s\n\n%s\n\n```text\n' "$name" "$summary"
+      hdr "$f" usage
+      printf '```\n\n'
+      if [ -n "$(hdr "$f" help)" ]; then
+        printf '```text\n'
+        hdr "$f" help
+        printf '```\n\n'
+      fi
+    done
+  done
+}
+
+# --- global options -----------------------------------------------------------
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) print_general_help; exit 0 ;;
+    --version|-V) printf 'mach %s\n' "$VERSION"; exit 0 ;;
+    --json) MACH_JSON=1; export MACH_JSON ;;
+    --dry-run) MACH_DRY_RUN=1; export MACH_DRY_RUN ;;
+    --host) [ $# -ge 2 ] || { err "--host needs a value"; exit 2; }; MACH_TARGET_HOST=$2; export MACH_TARGET_HOST; shift ;;
+    --host=*) MACH_TARGET_HOST=${1#--host=}; export MACH_TARGET_HOST ;;
+    --) shift; break ;;
+    -*) err "unknown global option: $1 (try: mach --help)"; exit 2 ;;
+    *) break ;;
+  esac
+  shift
+done
+
+if [ $# -eq 0 ]; then print_general_help; exit 0; fi
+
+cmd="$1"; shift
+
+if [ "$cmd" = "help" ]; then
+  if [ "${1:-}" = "--markdown" ]; then print_markdown; exit 0; fi
+  if [ $# -eq 0 ]; then print_general_help; exit 0; fi
+  if [ -f "$LIBEXEC/mach-$1" ]; then print_command_help "$1"; exit 0; fi
+  err "unknown command: $1"; exit 2
+fi
+
+case "$cmd" in
+  */*|*.*|'') err "unknown command: $cmd"; exit 2 ;;
+esac
+
+script="$LIBEXEC/mach-$cmd"
+if [ ! -f "$script" ]; then
+  subroot="${MACH_SUBSYSTEMS_DIR:-${MACH_MF_ROOT:-$HOME/machine-flows}/subsystems}"
+  if [ -f "$subroot/$cmd/subsystem.toml" ]; then
+    exec "$LIBEXEC/mach-subsystem" dispatch "$cmd" "$@"
+  fi
+  err "unknown command: $cmd"
+  suggestion=$(list_commands | awk -F'\t' -v c="$cmd" 'index($2, substr(c, 1, 2)) == 1 { print $2 }' | head -n 3 | tr '\n' ' ')
+  [ -n "$suggestion" ] && err "did you mean: $suggestion"
+  err "run 'mach help' to list commands"
+  exit 2
+fi
+
+case "${1:-}" in
+  -h|--help) print_command_help "$cmd"; exit 0 ;;
+esac
+# `mach docs build --help` style: help requested right after the subcommand
+if [ "${2:-}" = "--help" ] || [ "${2:-}" = "-h" ]; then
+  case "${1:-}" in -*) ;; *) print_command_help "$cmd"; exit 0 ;; esac
+fi
+
+if head -n 1 "$script" | grep -q python; then
+  if ! mach_python >/dev/null; then
+    err "python3 (>= 3.9) is required for 'mach $cmd' but was not found"
+    exit 2
+  fi
+fi
+
+exec "$script" "$@"

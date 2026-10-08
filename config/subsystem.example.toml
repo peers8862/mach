@@ -1,0 +1,70 @@
+# Example subsystem manifest. Generic data only: it feeds docs/sheets/subsystem-units.csv and the subsystem tests.
+# Real manifests live outside this repo at ~/machine-flows/subsystems/<id>/subsystem.toml (schema: that folder's README).
+schema = 1
+id = "demo"
+name = "Example Project"
+working_root = "~/projects/example"
+linear_team = "EXA"
+note_dest = "work"
+
+[delivery]
+max_fires_per_day = 20
+reply = "chat"
+
+[repos.example]
+path = "~/projects/example"
+remote = "example-org/example"
+verified = false
+source = "example data"
+
+[units.alpha]
+name = "Alpha"
+kind = "pillar"
+repo = "example"
+folder = "alpha"
+notes = "A top-level unit with a Grok Bot lead and secondary roles."
+verified = false
+
+[units.alpha.roles]
+lead = "grokbot:Example"
+since = "2026-10-08"
+changed = []
+assignments = []
+drafting = "claude"
+review = "user"
+notes = "The user reviews before anything ships."
+
+[units.beta]
+name = "Beta"
+kind = "product"
+parent = "alpha"
+repo = "example"
+folder = "beta"
+notes = "A product under alpha, led by the user."
+verified = true
+
+[units.beta.roles]
+lead = "user"
+since = "2026-10-08"
+changed = []
+assignments = []
+research = "codex"
+
+[units.gamma]
+name = "Gamma"
+kind = "pipeline"
+notes = "A unit with no repo binding yet."
+verified = false
+todo = "choose a lead"
+
+[units.gamma.roles]
+lead = "user"
+since = "2026-10-08"
+changed = []
+assignments = []
+
+[services."grokbot:Example"]
+strengths = ["unit context", "drafting"]
+limits = ["each fire uses Grok Bot quota"]
+workloads = ["unit prompts"]
+notes = "Router routine forwards prompts to this teammate bot."

@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+# mach-summary: Quick capture to inbox, Agenda, Drafts or a named destination
+# mach-group: gateway
+# mach-subcommands: flush
+# mach-writes: yes
+# mach-flag: --to | destination (use when the text may start with a destination name) | note.default
+# mach-flag: -t | note title | first words of the text
+# mach-flag: --tag | tag to add (repeatable) | none
+# mach-flag: --tags | comma-separated tags | none
+# mach-flag: --project | Agenda project | note.agenda.project (Inbox)
+# mach-flag: --date | date for the note, YYYY-MM-DD | none
+# mach-flag: --flag | flag the note in the target app | off
+# mach-flag: --open | open the note in its app after capture | off
+# mach-flag: --file | read the note text from this file | stdin or the text argument
+# mach-usage: mach note "text"                      (default destination: note.default, built-in inbox)
+# mach-usage: mach note agenda|drafts|inbox|<name> "text"
+# mach-usage: mach note --to agenda -- "text that may start with a destination name"
+# mach-usage: pbpaste | mach note drafts            (stdin when there is no text, or the text is "-")
+# mach-usage: mach note [dest] "text" [-t TITLE] [--tag X ...] [--tags a,b] [--project P] [--date D] [--flag] [--open]
+# mach-usage:                          [--file PATH] [--dry-run] [--json]
+# mach-usage: mach note flush [--apply]             (macOS: deliver outbox items to Agenda/Drafts)
+# mach-help: The first word is a destination only if it matches a built-in (inbox, agenda, drafts) or a configured
+# mach-help: [note.dest.<name>]; otherwise it is part of the text. --to always wins. Nothing runs and no run record is made.
+# mach-help: inbox appends to files/inbox/notes/YYYY-MM-DD-<host>.md (one file per machine per day).
+# mach-help: agenda (macOS): MCP at 127.0.0.1:16106, then the agenda:// URL via `open -g`, then the outbox.
+# mach-help: drafts (macOS): `drafts` CLI, then drafts:// URL via `open -g`, then the outbox.
+# mach-help: On Linux, agenda and drafts always go to files/inbox/outbox/<dest>/ (synced); `mach note flush` on the Mac delivers them.
+# mach-help: A fallback is never silent: it names the method used and exits 1. A file destination refuses paths outside machine-flows.
+# mach-help: Options: -t/--title; --tag (repeatable); --tags a,b; --project (agenda); --date; --flag (drafts); --open (bring app forward).
+# mach-help: --file PATH reads the text from a file. A local log (~/.local/state/mach/notes.log) records time, destination and method only.
+import argparse
+import os
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import mach_common as mc  # noqa: E402
+import mach_note as mn  # noqa: E402
+
+
+def main():
+    argv = sys.argv[1:]
+    ap = argparse.ArgumentParser(prog="mach note", add_help=False)
+    ap.add_argument("words", nargs="*")
+    ap.add_argument("--to")
+    ap.add_argument("-t", "--title", default="")
+    ap.add_argument("--tag", action="append", default=[])
+    ap.add_argument("--tags", default="")
+    ap.add_argument("--project", default="")
+    ap.add_argument("--date", default="")
+    ap.add_argument("--flag", action="store_true")
+    ap.add_argument("--open", action="store_true")
+    ap.add_argument("--file")
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_intermixed_args(argv)
+    cfg = mc.load_config_or_warn()
+    dry = a.dry_run or mc.env_flag("MACH_DRY_RUN")
+    js = a.json or mc.env_flag("MACH_JSON")
+    words = list(a.words)
+
+    if words == ["flush"] and not a.to:
+        lines, rc = mn.flush(cfg, a.apply and not dry)
+        for ln in lines:
+            print(ln)
+        return rc
+
+    dests = mn.known_dests(cfg)
+    if a.to:
+        dest = a.to
+    elif words and words[0] in dests:
+        dest = words.pop(0)
+    else:
+        dest = str(cfg.get("note.default", "inbox"))
+    text = " ".join(words).strip()
+    if a.file:
+        text = mc.read_text(mc.expand(a.file)).strip()
+        if not text:
+            mc.die("nothing to note: %s is empty or unreadable" % a.file)
+    elif text in ("", "-"):
+        if sys.stdin.isatty():
+            mc.die("nothing to note (give text, or pipe it in)", mc.EXIT_FAIL)
+        text = sys.stdin.read().strip()
+    if not text:
+        mc.die("nothing to note: the text is empty")
+    note = mn.Note(text, title=a.title, tags=mn.split_tags(a.tag, a.tags), project=a.project, date=a.date,
+                   flag=a.flag, open_app=a.open)
+    try:
+        res = mn.capture(cfg, dest, note, dry=dry)
+    except mn.NoteError as exc:
+        mc.eprint("mach: note: %s" % exc)
+        return mc.EXIT_FAIL
+    if js:
+        out = dict((k, res[k]) for k in ("dest", "type", "method", "status", "path", "exit", "message"))
+        mc.emit_json(out)
+    else:
+        print(("dry-run: " if dry else "") + res["message"])
+    return res["exit"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())
