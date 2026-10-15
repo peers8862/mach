@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+# mach-summary: Bring tagged Drafts from the Mac into the synced mach inbox
+# mach-group: gateway
+# mach-subcommands: pull-drafts
+# mach-writes: yes
+# mach-usage: mach inbox pull-drafts [--apply] [--json] [--limit N]
+# mach-flag: --limit | maximum number of tagged drafts to inspect in one run | 50
+# mach-help: On macOS, reads Drafts tagged mach-outbox and validates each mach prompt document.
+# mach-help: Preview shows titles and destinations. --apply writes each document once, then archives its Drafts copy.
+# mach-help: A failed archive can be retried safely: the same Drafts UUID maps to the same inbox file.
+# mach-help: Invalid or changed drafts stay in Drafts for correction; no AI task runs automatically.
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.join(os.environ.get("MACH_HOME") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+
+import frontmatter as fm  # noqa: E402
+import mach_common as mc  # noqa: E402
+
+
+UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+SETUP_TYPES = {"subsystem-setup", "unit-setup", "role-change"}
+MAX_CONTENT = 128 * 1024
+
+
+def drafts_json(*args):
+    """Call the official Drafts CLI and parse one JSON result."""
+    rc, output, error = mc.run_capture([mc.cmd("drafts"), "--json"] + list(args), timeout=30)
+    if rc:
+        raise ValueError("Drafts CLI failed (%s): %s" % (rc, error.strip()[:160] or "no details"))
+    try:
+        return json.loads(output)
+    except ValueError:
+        raise ValueError("Drafts CLI returned invalid JSON")
+
+
+def pending(limit):
+    """Yield checked documents from the tagged Drafts inbox."""
+    rows = drafts_json("list", "--folder", "inbox", "--tag", "mach-outbox")
+    if not isinstance(rows, list):
+        raise ValueError("Drafts CLI list result is not an array")
+    seen = set()
+    for row in rows[:limit]:
+        ident = row.get("id") if isinstance(row, dict) else None
+        if not isinstance(ident, str) or not UUID.fullmatch(ident):
+            raise ValueError("Drafts CLI returned an invalid draft ID")
+        if ident.lower() in seen:
+            raise ValueError("Drafts CLI returned a duplicate draft ID")
+        seen.add(ident.lower())
+        detail = drafts_json("get", ident)
+        if not isinstance(detail, dict) or detail.get("id") != ident:
+            raise ValueError("Drafts CLI returned mismatched detail for %s" % ident)
+        tags = detail.get("tags")
+        if not isinstance(tags, list):
+            raise ValueError("Drafts CLI returned invalid tags for %s" % ident)
+        if "mach-outbox" not in tags or detail.get("folder") != "inbox":
+            continue  # changed while the list was read; try again next time
+        content = detail.get("content")
+        if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_CONTENT:
+            yield {"id": ident, "status": "invalid", "reason": "missing or oversized content"}
+            continue
+        doc = fm.parse_text(content)
+        fm.validate(doc)
+        if doc.errors:
+            yield {"id": ident, "status": "invalid", "reason": "; ".join("line %d: %s" % e for e in doc.errors[:3])}
+            continue
+        folder = "subsystems" if doc.meta.get("type") in SETUP_TYPES else "prompts"
+        relative = "files/inbox/%s/drafts-%s.md" % (folder, ident.lower())
+        yield {"id": ident, "status": "ready", "title": doc.meta.get("title", ""),
+               "type": doc.meta["type"], "path": relative, "content": content}
+
+
+def deliver(item):
+    """Save by stable Drafts ID, then archive the source only after a matching save."""
+    target = os.path.join(mc.mf_root(), item["path"])
+    if not mc.is_inside(target, mc.mf_root()):
+        return "failed", "inbox path resolves outside machine-flows"
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=os.path.dirname(target),
+                                         prefix=".drafts-", delete=False) as fh:
+            temporary = fh.name
+            os.chmod(temporary, 0o600)
+            fh.write(item["content"])
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            if mc.read_text(target) != item["content"]:
+                return "conflict", "inbox file differs from the Drafts copy; kept both for review"
+    except OSError as exc:
+        return "failed", "could not write inbox file: %s" % exc
+    finally:
+        if temporary:
+            os.unlink(temporary)
+    rc, _out, error = mc.run_capture([mc.cmd("drafts"), "archive", item["id"]], timeout=30)
+    if rc:
+        return "warning", "inbox file saved, but Drafts archive failed (%s): %s" % (rc, error.strip()[:120])
+    return "delivered", "saved and archived in Drafts"
+
+
+def main():
+    """Preview or deliver tagged drafts on the Mac."""
+    ap = argparse.ArgumentParser(prog="mach inbox", add_help=False)
+    ap.add_argument("subcommand", choices=["pull-drafts"])
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--limit", type=int, default=50)
+    args = ap.parse_args()
+    if not mc.is_mac():
+        mc.eprint("mach inbox pull-drafts runs on the Mac that has Drafts")
+        return mc.EXIT_WARN
+    if not 1 <= args.limit <= 250:
+        mc.eprint("--limit must be between 1 and 250")
+        return mc.EXIT_FAIL
+    if not mc.which(mc.cmd("drafts")):
+        mc.eprint("Drafts CLI is not installed; see @agiletortoise/drafts-mcp-server")
+        return mc.EXIT_WARN
+    apply = args.apply and not (args.dry_run or mc.env_flag("MACH_DRY_RUN"))
+    results = []
+    try:
+        for item in pending(args.limit):
+            result = {k: item[k] for k in ("id", "status")}
+            for key in ("title", "type", "path", "reason"):
+                if key in item:
+                    result[key] = item[key]
+            if item["status"] == "ready":
+                if apply:
+                    result["status"], result["reason"] = deliver(item)
+                else:
+                    result["status"] = "preview"
+            results.append(result)
+    except ValueError as exc:
+        mc.eprint("mach inbox: %s" % exc)
+        return mc.EXIT_FAIL
+    if args.json or mc.env_flag("MACH_JSON"):
+        mc.emit_json({"applied": apply, "items": results})
+    else:
+        for item in results:
+            print("%s %s %s %s%s" % (item["status"].upper(), item["id"], item.get("path", ""), item.get("title", ""),
+                                  ": " + item["reason"] if item.get("reason") else ""))
+        if not results:
+            print("no Drafts tagged mach-outbox in the inbox")
+        elif not apply:
+            print("preview only: run `mach inbox pull-drafts --apply` to save and archive valid drafts")
+    return mc.EXIT_WARN if any(x["status"] in ("invalid", "conflict", "failed", "warning") for x in results) else mc.EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())
