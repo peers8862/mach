@@ -235,26 +235,42 @@ def new_run(cfg, *, kind, title, tool, path, input_text, machine=None, status="q
 
 
 def tee_exec(argv, cwd, logfile, stream=True):
-    """Run a tool headless, stream its output, tee into a local log. Returns (rc, text)."""
+    """Run a tool headless, stream its output, tee into a local log. Returns (rc, merged text, stderr text)."""
     import subprocess
     import sys
+    import threading
     os.makedirs(os.path.dirname(logfile), exist_ok=True)
     chunks = []
+    errors = []
+    lock = threading.Lock()
     try:
-        p = subprocess.Popen(argv, cwd=cwd or None, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        p = subprocess.Popen(argv, cwd=cwd or None, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              stdin=subprocess.DEVNULL, universal_newlines=True)
     except OSError as exc:
-        return 127, "cannot run %s: %s" % (argv[0], exc)
+        message = "cannot run %s: %s" % (argv[0], exc)
+        return 127, message, message
     with open(logfile, "a", encoding="utf-8") as log:
         log.write("$ %s\n" % mc.shown_cmd(argv))
-        for line in p.stdout:
-            chunks.append(line)
-            log.write(line)
-            if stream:
-                sys.stdout.write(line)
-                sys.stdout.flush()
-    p.wait()
-    return p.returncode, "".join(chunks)
+        def consume(pipe, is_error):
+            with pipe:
+                for line in pipe:
+                    with lock:
+                        chunks.append(line)
+                        if is_error:
+                            errors.append(line)
+                        log.write(line)
+                        if stream:
+                            sys.stdout.write(line)
+                            sys.stdout.flush()
+
+        readers = [threading.Thread(target=consume, args=(pipe, is_error))
+                   for pipe, is_error in ((p.stdout, False), (p.stderr, True))]
+        for reader in readers:
+            reader.start()
+        for reader in readers:
+            reader.join()
+        p.wait()
+    return p.returncode, "".join(chunks), "".join(errors)
 
 
 def log_path(run_id):

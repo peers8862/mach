@@ -298,7 +298,7 @@ clean clone passes the same check. A command's status comes from `# mach-status:
 Build either adapter into an explicit output path:
 
 ```bash
-python3 tools/build-drafts-hub.py --adapter config/drafts/mach.json --templates /path/to/templates --out Mach-Hub.draftsAction
+python3 tools/build-drafts-hub.py --adapter config/drafts/mach.json --templates /path/to/templates --out NA-Mach-Hub.draftsAction
 python3 tools/build-drafts-hub.py --adapter config/drafts/na.json --out drafts/Importing/NA-Hub.draftsAction
 ```
 
@@ -313,7 +313,7 @@ On Mac, create a Drafts folder bookmark named `machine-flows` for the machine-fl
 
 ## Mach Hub: ten actions
 
-Build locally with `python3 tools/build-drafts-hub.py --templates tests/fixtures/templates --out drafts/Importing/Mach-Hub.draftsAction`.
+Build locally with `python3 tools/build-drafts-hub.py --templates tests/fixtures/templates --out drafts/Importing/NA-Mach-Hub.draftsAction`.
 The pinned action UUID survives rebuilding. The menu offers new task, new research,
 check, idempotent send, quick capture (mach-outbox), status, open result, approve,
 reject and next step. Mac sends replace the same UUID-named inbox file; iOS queues

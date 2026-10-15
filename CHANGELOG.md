@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pin `NA: Mach Hub` to its installed action, step and group identities; ship `NA-Mach-Hub.draftsAction` alongside the independent NA Hub.
+- Record quota errors only for failed tool exits with quota/rate-limit stderr; keep printed code and diffs out of quota detection. Record Git lock and metadata permission failures as warnings, with hermetic process tests.
+
 - Add the ten-action NA Hub adapter, project templates and independent stable UUID5 identities. Queue pillar briefs locally for the existing subsystem router; Linear briefs remain gated.
 - Cover every NA action with mocked execution and schema parity, dispatcher dry runs and deterministic rebuild checks.
 

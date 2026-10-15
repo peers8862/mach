@@ -137,18 +137,19 @@ def exec_ai(run, n, tool, prompt, workdir, write, cfg, stream, outname=None):
     run.meta["agent_start"] = mc.now().astimezone().isoformat()
     run.save()
     started = time.monotonic()
-    rc, text = mr.tee_exec(argv, cwd, mr.log_path(run.id), stream)
+    rc, text, stderr = mr.tee_exec(argv, cwd, mr.log_path(run.id), stream)
     run.meta["agent_end"] = mc.now().astimezone().isoformat()
     run.meta["elapsed_seconds"] = str(round(time.monotonic() - started, 3))
     transcript = run.path_of("transcript.txt")
     with open(transcript, "a", encoding="utf-8") as log:
         log.write(text)
     run.meta["transcript"] = "transcript.txt"
-    errors = [line for line in text.splitlines()
+    errors = [line for line in stderr.splitlines() if rc != 0
               if re.search(r"quota|rate[ -]?limit|too many requests|\b429\b", line, re.I)]
     run.meta["quota_errors"] = list(run.meta.get("quota_errors", [])) + errors
-    if re.search(r"index\.lock|read-only file system|read.only.*\.git|permission denied.*\.git|\.git.*permission denied", text, re.I):
+    if re.search(r"unable to create[^\n]*index\.lock|index\.lock[^\n]*(?:read-only file system|permission denied)|permission denied[^\n]*\.git|\.git[^\n]*permission denied", text, re.I):
         warning = "Commit blocked by sandbox or read-only Git metadata; review transcript"
+        run.meta["git_sandbox_warnings"] = list(run.meta.get("git_sandbox_warnings", [])) + [warning]
         run.meta["warnings"] = list(run.meta.get("warnings", [])) + [warning]
         run.note(warning)
     run.save()

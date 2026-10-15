@@ -234,7 +234,7 @@ lib/mach_runs.py,_iter_run_dirs,python,
 lib/mach_runs.py,list_runs,python,
 lib/mach_runs.py,find_run,python,"Exact id, else a unique prefix. Returns Run or None; raises ValueError when ambiguous."
 lib/mach_runs.py,new_run,python,"Allocate a unique run id and folder, write input copy and run.md."
-lib/mach_runs.py,tee_exec,python,"Run a tool headless, stream its output, tee into a local log. Returns (rc, text)."
+lib/mach_runs.py,tee_exec,python,"Run a tool headless, stream its output, tee into a local log. Returns (rc, merged text, stderr text)."
 lib/mach_runs.py,log_path,python,
 lib/mach_sheets.py,read_csv,python,"All non-blank records of a CSV (UTF-8, BOM tolerated). Raises OSError / UnicodeDecodeError / csv.Error."
 lib/mach_sheets.py,write_csv_text,python,

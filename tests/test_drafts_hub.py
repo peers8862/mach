@@ -45,6 +45,12 @@ class HubTests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_identity_and_neutrality(self):
+        self.assertEqual(self.actions['mach']['name'], 'NA: Mach Hub')
+        self.assertEqual(self.actions['mach']['uuid'], '25F53AC0-AF0B-53CD-AB30-CA172E50A5E7')
+        self.assertEqual(self.actions['mach']['steps'][0]['uuid'], '5517EA4C-D6F9-5EB5-B1A6-D47A8B365907')
+        self.assertEqual(self.actions['mach']['groupUUID'], '0776A915-74D5-5575-AC7A-F6B1029B5AC0')
+        identities = lambda a: {a['uuid'], a['groupUUID'], a['steps'][0]['uuid']}
+        self.assertTrue(identities(self.actions['na']).isdisjoint(identities(self.actions['mach'])))
         for key, suffix in (('uuid',''), ('groupUUID','/group')):
             self.assertEqual(self.actions['na'][key], str(uuid.uuid5(uuid.NAMESPACE_URL, 'machine-flows/NA Hub'+suffix)).upper())
             self.assertNotEqual(self.actions['na'][key], self.actions['mach'][key])
@@ -160,7 +166,7 @@ class HubTests(unittest.TestCase):
             self.assertNotRegex((ROOT/source).read_text(),r'\bNA\b|\bna\b')
 
     def test_shipped_artifacts(self):
-        for adapter,filename in (('mach','Mach-Hub'),('na','NA-Hub')):
+        for adapter,filename in (('mach','NA-Mach-Hub'),('na','NA-Hub')):
             action=json.loads((ROOT/('drafts/Importing/'+filename+'.draftsAction')).read_text())
             script=action['steps'][0]['data']['script']
             hub=json.loads(script.splitlines()[0][len('const HUB = '):-1])
@@ -235,4 +241,4 @@ class HubTests(unittest.TestCase):
         script=self.actions['mach']['steps'][0]['data']['script']
         hub=json.loads(script.splitlines()[0][len('const HUB = '):-1])
         self.assertEqual(len(hub['templates'])+len(hub['actions']),10)
-        self.assertEqual(self.actions['mach']['uuid'],'709DFE9C-C214-5AB7-841A-6F0ECD7A27C0')
+        self.assertEqual(self.actions['mach']['uuid'],'25F53AC0-AF0B-53CD-AB30-CA172E50A5E7')

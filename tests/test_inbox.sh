@@ -108,7 +108,7 @@ if command -v node >/dev/null 2>&1; then
     DRAFTS_CONTENT=$(python3 - "$TEST_ROOT" "$choice" <<'PYCODE'
 import json, pathlib, subprocess, sys
 root=pathlib.Path(sys.argv[1])
-action=json.loads((root/'drafts/Importing/Mach-Hub.draftsAction').read_text())
+action=json.loads((root/'drafts/Importing/NA-Mach-Hub.draftsAction').read_text())
 request=dict(script=action['steps'][0]['data']['script'],requests=[dict(text='',choice=int(sys.argv[2]))])
 result=subprocess.check_output(['node',str(root/'tests/drafts_hub_runner.js')],input=json.dumps(request).encode())
 print(json.loads(result)[0]['created']['content'])

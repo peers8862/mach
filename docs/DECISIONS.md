@@ -238,13 +238,19 @@ exists: `fallbacks: []` records that fact. The actual configured binary and tool
 are recorded separately. Full merged agent stdout/stderr goes to transcript.txt
 in the run folder (and therefore may sync); local command logs remain local.
 Timing fields use ISO timestamps with the host offset; elapsed_seconds measures
-agent execution using a monotonic clock. Quota errors and sandbox warnings are
-output heuristics; warnings do not override the agent exit status.
+agent execution using a monotonic clock. Quota errors require a nonzero tool exit and a quota/rate-limit diagnostic on
+stderr. Separate pipe readers preserve stderr for classification while retaining
+both streams in the transcript; transcript code and diffs are not quota signals.
+Git lock creation and metadata permission errors populate git_sandbox_warnings
+and general warnings without overriding the agent exit status.
 
 ## NA Hub adapter (Phase C)
 
 NA Hub owns nine brief templates and one send action, with UUID5 action, script
-and group identities derived from `NA Hub`. Mach Hub identity stays unchanged.
+and group identities derived from `NA Hub`. The generic adapter pins the installed `NA: Mach Hub` name and action
+`25F53AC0-AF0B-53CD-AB30-CA172E50A5E7`, step
+`5517EA4C-D6F9-5EB5-B1A6-D47A8B365907` and group
+`0776A915-74D5-5575-AC7A-F6B1029B5AC0`. All NA Hub identities are distinct.
 Project names, routing constraints and content live in the adapter, never in the
 shared generator or JavaScript. Adapter template directories resolve from the
 repository root; explicit `--templates` still overrides them.
@@ -253,5 +259,6 @@ Send accepts only the configured subsystem and brief types. It writes unchanged
 briefs locally; the existing subsystem dispatcher owns role resolution and router
 secrets. Explicit file commands handle subsystem-folder prompts because inbox run
 scans the prompts folder. Linear briefs always use the existing outward-output
-gate. The old NA: Mach Hub artifact is retired; existing installations need manual
-cleanup during Phase D because the new hub intentionally has a different identity.
+gate. The generic adapter ships as `NA-Mach-Hub.draftsAction`, replacing the stale
+`Mach-Hub.draftsAction` filename and updating the installed generic hub in place.
+NA Hub remains a separate import with its own identity.
