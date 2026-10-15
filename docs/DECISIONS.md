@@ -240,3 +240,18 @@ in the run folder (and therefore may sync); local command logs remain local.
 Timing fields use ISO timestamps with the host offset; elapsed_seconds measures
 agent execution using a monotonic clock. Quota errors and sandbox warnings are
 output heuristics; warnings do not override the agent exit status.
+
+## NA Hub adapter (Phase C)
+
+NA Hub owns nine brief templates and one send action, with UUID5 action, script
+and group identities derived from `NA Hub`. Mach Hub identity stays unchanged.
+Project names, routing constraints and content live in the adapter, never in the
+shared generator or JavaScript. Adapter template directories resolve from the
+repository root; explicit `--templates` still overrides them.
+
+Send accepts only the configured subsystem and brief types. It writes unchanged
+briefs locally; the existing subsystem dispatcher owns role resolution and router
+secrets. Explicit file commands handle subsystem-folder prompts because inbox run
+scans the prompts folder. Linear briefs always use the existing outward-output
+gate. The old NA: Mach Hub artifact is retired; existing installations need manual
+cleanup during Phase D because the new hub intentionally has a different identity.

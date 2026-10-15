@@ -1,54 +1,61 @@
 {
-  "name": "NA: Mach Hub",
-  "action_uuid": "25F53AC0-AF0B-53CD-AB30-CA172E50A5E7",
-  "step_uuid": "5517EA4C-D6F9-5EB5-B1A6-D47A8B365907",
-  "group_uuid": "0776A915-74D5-5575-AC7A-F6B1029B5AC0",
+  "name": "NA Hub",
+  "action_uuid": "EFDD0B25-BE3A-5B1C-A849-23267A8427DF",
+  "step_uuid": "1977E8AD-D165-52D5-9F26-2A27CB59089C",
+  "group_uuid": "74F74B68-4973-572B-A509-EBCDFC47B6AC",
   "tags": [
-    "mach"
+    "mach",
+    "na"
   ],
   "bookmark": "machine-flows",
+  "template_dir": "config/drafts/na-templates",
   "destinations": {
     "default": "files/inbox/prompts",
-    "subsystem-setup": "files/inbox/subsystems",
-    "unit-setup": "files/inbox/subsystems",
-    "role-change": "files/inbox/subsystems"
+    "subsystem-prompt": "files/inbox/subsystems"
   },
   "templates": [
     {
-      "file": "task-brief.md",
-      "label": "New task brief"
+      "file": "pillar-prompt.md",
+      "label": "New pillar prompt"
     },
     {
-      "file": "research-brief.md",
-      "label": "New research brief"
+      "file": "sector-research.md",
+      "label": "Sector research brief"
     },
     {
-      "file": "flow-request.md",
-      "label": "New flow"
+      "file": "company-profile.md",
+      "label": "Company profile"
     },
     {
-      "file": "subsystem-prompt.md",
-      "label": "New subsystem prompt"
+      "file": "linear-issue.md",
+      "label": "NA Linear issue"
     },
     {
-      "file": "mags-issue.md",
-      "label": "New mags issue"
+      "file": "mags-piece.md",
+      "label": "MAGS piece"
     },
     {
-      "file": "newslines-entry.md",
-      "label": "New newslines entry"
+      "file": "newsline.md",
+      "label": "Newsline"
     },
     {
-      "file": "subsystem-setup.md",
-      "label": "New subsystem setup"
+      "file": "decision-needed.md",
+      "label": "Decision needed"
     },
     {
-      "file": "unit-setup.md",
-      "label": "New unit setup"
+      "file": "meeting-notes.md",
+      "label": "Meeting notes to a pillar"
     },
     {
-      "file": "role-change.md",
-      "label": "New role change"
+      "file": "web-clip.md",
+      "label": "Web clip to research folder"
     }
-  ]
+  ],
+  "actions": [
+    "Send to pillar bot"
+  ],
+  "send_types": [
+    "subsystem-prompt"
+  ],
+  "subsystem": "na"
 }

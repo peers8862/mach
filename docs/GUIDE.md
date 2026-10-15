@@ -299,12 +299,12 @@ Build either adapter into an explicit output path:
 
 ```bash
 python3 tools/build-drafts-hub.py --adapter config/drafts/mach.json --templates /path/to/templates --out Mach-Hub.draftsAction
-python3 tools/build-drafts-hub.py --adapter config/drafts/na.json --templates /path/to/templates --out NA-Mach-Hub.draftsAction
+python3 tools/build-drafts-hub.py --adapter config/drafts/na.json --out drafts/Importing/NA-Hub.draftsAction
 ```
 
-The default adapter is `config/drafts/mach.json`. Adapter configs own the name, action/step/group UUIDs, ordered template filenames and labels, tags, bookmark name and destination folders. The NA example keeps the installed **NA: Mach Hub** identity so importing offers replacement. Preserve those IDs on rebuild; `--name` intentionally creates a distinct action identity. No host-config identity overrides are applied. JS lives in `tools/drafts-hub/`; schemas and configured machine enums are embedded at build time from `lib/frontmatter.py`. Rebuild after changing machine configuration. Identical sources, adapter, templates and machine configuration produce identical bytes.
+The default adapter is `config/drafts/mach.json`. Adapter configs own the name, action/step/group UUIDs, ordered template filenames and labels, tags, bookmark name and destination folders. **NA Hub** has its own UUID5 identities derived from its name, distinct from Mach Hub and the retired NA: Mach Hub. Its templates live in `config/drafts/na-templates/`. Preserve those IDs on rebuild; `--name` intentionally creates a distinct action identity. No host-config identity overrides are applied. JS lives in `tools/drafts-hub/`; schemas and configured machine enums are embedded at build time from `lib/frontmatter.py`. Rebuild after changing machine configuration. Identical sources, adapter, templates and machine configuration produce identical bytes.
 
-The generic menu includes task, research and flow briefs. Project-specific and dated setup examples belong to project adapters. Check reports flow input as a warning. New briefs default empty due dates to tomorrow in the device's local calendar.
+The generic menu starts with task and research briefs. Project-specific and dated setup examples belong to project adapters. Check reports flow input as a warning. New briefs default empty due dates to tomorrow in the device's local calendar.
 
 On Mac, create a Drafts folder bookmark named `machine-flows` for the machine-flows root before sending. Send writes `files/inbox/<prompts|subsystems>/drafts-<lowercase-uuid>.md`, the same name used by the collector. A successful send clears `mach-outbox` and sets `mach-sent`; resending requires confirmation and overwrites the same file. Content stays unchanged so a collector retry sees identical bytes. On iPhone, Send tags `mach-outbox`; run `mach inbox pull-drafts --apply` on the Mac. Mac bookmark/write failures show their reason and also leave the draft in the outbox. Keep outbox drafts in the Drafts inbox for collection. Sending only queues work; it does not execute it.
 
@@ -335,3 +335,24 @@ agent_end, elapsed_seconds, actual_tool, tool_command, fallbacks, quota_errors a
 warnings. There is currently no automatic fallback. Full agent output is saved in
 the run folder as transcript.txt; approval prints status and its path. Review that
 file for quota/rate-limit errors or a sandbox-blocked commit warning.
+
+### NA Hub (Phase C)
+
+The ten actions are pillar prompt, send to pillar bot, sector research brief,
+company profile, NA Linear issue, MAGS piece, newsline, decision needed,
+meeting notes to a pillar, and web clip. Set `unit` to a real pillar ID from
+`mach subsystem show na`; the default `research` must exist in your manifest.
+MAGS supports START and the proposed SECTORS, SOLOS and PLACES formats.
+Edit research output paths to avoid overwriting earlier results.
+
+Send to pillar bot accepts only `subsystem-prompt` briefs for `na`, preserving
+content in `files/inbox/subsystems/drafts-<uuid>.md`. It shows an explicit
+`mach run <path> --dry-run` preview and `mach run <path>` handoff, which uses
+`mach-subsystem dispatch`, the manifest role and existing router secrets setup.
+No Drafts action calls the network. Review the preview before manually running.
+On iPhone the shared collector queues subsystem prompts in `files/inbox/prompts/`
+for `mach run --inbox`; the Mac subsystem folder requires the explicit path.
+Other generated briefs can be sent using Mach Hub. Linear output is
+`linear-comment`, which always gates and produces a handoff rather than posting.
+Company profiles propose intel CSV rows; they do not edit sheets automatically.
+Import and device sync remain Phase D verification work.

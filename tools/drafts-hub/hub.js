@@ -4,6 +4,7 @@
   }
   function cancel() { context.cancel(); }
   function next(m,path) {
+    if (m.type==='subsystem-prompt') return 'mach run '+path+' --dry-run\nReview routing, then run: mach run '+path;
     const verbs={'subsystem-setup':'new','unit-setup':'unit','role-change':'role'};
     return verbs[m.type] ? 'mach subsystem '+verbs[m.type]+' '+(m.id||m.subsystem)+' --from '+path : 'mach run --inbox';
   }
@@ -66,6 +67,8 @@
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(draft.uuid)) throw Error('Invalid Drafts UUID');
     const path=folder+'/drafts-'+draft.uuid.toLowerCase()+'.md';
     if (action==='Show next step') { show('Next step',next(m,path)); return; }
+    if (HUB.send_types && !HUB.send_types.includes(m.type)) throw Error('This send action requires: '+HUB.send_types.join(', '));
+    if (HUB.subsystem && m.subsystem!==HUB.subsystem) throw Error('Brief subsystem must be '+HUB.subsystem);
     if (draft.tags.includes('mach-sent')) {
       const confirm=Prompt.create(); confirm.title='Resend this draft?'; confirm.addButton('Resend');
       if (!confirm.show()) { cancel(); return; }

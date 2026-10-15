@@ -8,6 +8,19 @@ mkdir -p "$MACH_MF_ROOT/subsystems/demo" "$MACH_MF_ROOT/subsystems/_template" "$
 cp "$TEST_ROOT/config/subsystem.example.toml" "$MACH_MF_ROOT/subsystems/demo/subsystem.toml"
 cp "$FIXTURES/subsystems/_template/subsystem.toml" "$MACH_MF_ROOT/subsystems/_template/subsystem.toml"
 export MACH_SUBSYSTEMS_DIR="$MACH_MF_ROOT/subsystems" MACH_FORCE_MINITOML=1
+# NA Hub briefs use the same dispatcher; dry runs never deliver to a router.
+mkdir -p "$MACH_SUBSYSTEMS_DIR/na"
+python3 - "$MACH_SUBSYSTEMS_DIR/na/subsystem.toml" <<'PYNA'
+import sys
+from pathlib import Path
+Path(sys.argv[1]).write_text('schema = 1\nid = "na"\nname = "NA test"\nworking_root = "~"\n' + ''.join('[units.'+u+']\nkind = "pillar"\n[units.'+u+'.roles]\nlead = "grokbot:Test"\n' for u in ('research','mags','newslines')) + '[services."grokbot:Test"]\nname = "Test"\n')
+PYNA
+for brief in pillar-prompt mags-piece newsline meeting-notes; do
+  run run --dry-run "$TEST_ROOT/config/drafts/na-templates/$brief.md"
+  assert_rc 0 "NA $brief dispatcher dry run"
+  assert_contains '"subsystem": "na"' "NA $brief previews subsystem routing"
+  assert_contains '<redacted>' "NA $brief previews router without secrets"
+done
 run subsystem lint demo; assert_rc 0 "example lints with minitoml"; assert_not_contains FAIL "example has no FAIL"
 run subsystem list --json; assert_rc 0 "list"; assert_json "list JSON"; assert_contains demo "list contains the example"
 run subsystem show demo --json; assert_rc 0 "show"; assert_json "show JSON"

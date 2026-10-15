@@ -17,6 +17,7 @@ function run(req) {
   };
   vm.createContext(sandbox);
   vm.runInContext(input.script+'\nglobalThis.validation=check('+JSON.stringify(req.text)+');',sandbox);
+  if(events.created) events.validation_created=vm.runInContext('check('+JSON.stringify(events.created.content)+')',sandbox);
   return {...events,tags:draft.tags,content:draft.content,validation:sandbox.validation};
 }
 process.stdout.write(JSON.stringify(input.requests.map(run)));

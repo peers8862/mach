@@ -2,12 +2,15 @@
 
 ## Unreleased
 
+- Add the ten-action NA Hub adapter, project templates and independent stable UUID5 identities. Queue pillar briefs locally for the existing subsystem router; Linear briefs remain gated.
+- Cover every NA action with mocked execution and schema parity, dispatcher dry runs and deterministic rebuild checks.
+
 - Mach Hub now has ten actions, including local result lookup and confirmed decision files with explicit unconnected messages.
 - Task/research write permissions work through inbox runs and require before-run approval.
 - Run records capture pickup, approval and agent timings, actual tool/binary, explicit fallback history, quota errors and Git sandbox warnings. Save full agent output as transcript.txt and keep approval output short.
 - Extend hermetic Drafts and execution-record tests.
 
-- Drafts hubs now use separate JavaScript sources and project adapter JSON configs. The NA adapter pins the installed action identity; the generic menu starts with task and research briefs.
+- Drafts hubs now use separate JavaScript sources and project adapter JSON configs. The original NA adapter pinned the installed action identity (superseded by Phase C); the generic menu starts with task and research briefs.
 - Generate validation rules from Python frontmatter definitions, including enums, dates, lists and flow-input warnings. Reject list-valued document types without crashing.
 - Send by stable Drafts UUID, confirm resends, preserve brief content, clear outbox on Mac success, and show write failures. iPhone sends tag the outbox without opening bookmarks; cancellation cancels the action. Due defaults use the local calendar.
 - Add deterministic rebuild, schema parity and mocked Drafts execution tests, with clean Node skips.

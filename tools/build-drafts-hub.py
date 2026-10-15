@@ -20,7 +20,7 @@ def main(out=None, name=None, templates=None, adapter=None):
         adapter.update(action_uuid=uid(name), step_uuid=uid(name+'/script'))
     adapter['name'] = NAME
     out = pathlib.Path(out) if out else pathlib.Path(mc.mf_root()) / 'drafts/Importing' / (re.sub(r'[^A-Za-z0-9]+', '-', NAME).strip('-')+'.draftsAction')
-    tdir = pathlib.Path(templates) if templates else pathlib.Path(mc.mf_root()) / 'ai-authored/templates'
+    tdir = pathlib.Path(templates) if templates else (ROOT / adapter['template_dir'] if adapter.get('template_dir') else pathlib.Path(mc.mf_root()) / 'ai-authored/templates')
     entries = []
     for item in adapter['templates']:
         text = (tdir / item['file']).read_text(encoding='utf-8')

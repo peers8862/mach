@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'lib'))
@@ -26,14 +27,14 @@ class HubTests(unittest.TestCase):
             path = pathlib.Path(cls.temp.name) / (adapter+'.json')
             cmd = [sys.executable, str(ROOT/'tools/build-drafts-hub.py'), '--adapter',
                    str(ROOT/('config/drafts/'+adapter+'.json')), '--templates',
-                   str(ROOT/'tests/fixtures/templates'), '--out', str(path)]
+                   str(ROOT/('config/drafts/na-templates' if adapter=='na' else 'tests/fixtures/templates')), '--out', str(path)]
             subprocess.check_call(cmd, env=env, stdout=subprocess.DEVNULL)
             before = path.read_bytes()
             subprocess.check_call(cmd, env=env, stdout=subprocess.DEVNULL)
             assert before == path.read_bytes()
             cls.actions[adapter] = json.loads(before)
 
-    def execute(self, requests, adapter='na'):
+    def execute(self, requests, adapter='mach'):
         if not shutil.which('node'):
             self.skipTest('node missing: Drafts execution tests skipped')
         script = self.actions[adapter]['steps'][0]['data']['script']
@@ -44,9 +45,12 @@ class HubTests(unittest.TestCase):
         return json.loads(result.stdout)
 
     def test_identity_and_neutrality(self):
-        self.assertEqual(self.actions['na']['uuid'], '25F53AC0-AF0B-53CD-AB30-CA172E50A5E7')
-        self.assertEqual(self.actions['na']['steps'][0]['uuid'], '5517EA4C-D6F9-5EB5-B1A6-D47A8B365907')
-        self.assertEqual(self.actions['na']['groupUUID'], '0776A915-74D5-5575-AC7A-F6B1029B5AC0')
+        for key, suffix in (('uuid',''), ('groupUUID','/group')):
+            self.assertEqual(self.actions['na'][key], str(uuid.uuid5(uuid.NAMESPACE_URL, 'machine-flows/NA Hub'+suffix)).upper())
+            self.assertNotEqual(self.actions['na'][key], self.actions['mach'][key])
+        self.assertEqual(self.actions['na']['steps'][0]['uuid'], str(uuid.uuid5(uuid.NAMESPACE_URL, 'machine-flows/NA Hub/script')).upper())
+        self.assertNotEqual(self.actions['na']['steps'][0]['uuid'], self.actions['mach']['steps'][0]['uuid'])
+        self.assertEqual(self.actions['na']['name'], 'NA Hub')
         hub = json.loads((ROOT/'config/drafts/mach.json').read_text())
         self.assertEqual([t['label'] for t in hub['templates']], ['New task brief','New research brief'])
 
@@ -76,7 +80,7 @@ class HubTests(unittest.TestCase):
                 self.assertEqual(doc.meta, result['validation']['m'])
 
     def test_every_template_executes(self):
-        for adapter in ('mach','na'):
+        for adapter in ('mach',):
             config = json.loads((ROOT/('config/drafts/'+adapter+'.json')).read_text())
             for i, template in enumerate(config['templates']):
                 text = (ROOT/'tests/fixtures/templates'/template['file']).read_text()
@@ -101,8 +105,62 @@ class HubTests(unittest.TestCase):
                 self.assertIn('mach-outbox',phone['tags'])
                 self.assertIn('mach inbox pull-drafts --apply on the Mac',phone['messages'][0])
 
+    def test_na_parity(self):
+        texts=[]
+        for p in sorted((ROOT/'config/drafts/na-templates').glob('*.md')):
+            text=p.read_text()
+            texts.append(text)
+            for key in fm.SCHEMA[fm.parse_text(text).meta['type']]['required']:
+                for value in ('[]','true','""','bogus'):
+                    texts.append(re.sub(r'^'+key+r':.*$',key+': '+value,text,flags=re.M))
+        results=self.execute([dict(text=t,choice=0,cancel=True) for t in texts],'na')
+        for text,result in zip(texts,results):
+            doc=fm.validate(fm.parse_text(text))
+            with self.subTest(text=text[:100]):
+                self.assertEqual(doc.meta,result['validation']['m'])
+                self.assertEqual(bool(doc.errors),bool(result['validation']['problems']))
+                self.assertEqual(bool(doc.warnings),bool(result['validation']['warnings']))
+
+    def test_na_actions(self):
+        config=json.loads((ROOT/'config/drafts/na.json').read_text())
+        self.assertEqual(len(config['templates'])+len(config['actions']),10)
+        for i,t in enumerate(config['templates']):
+            text=(ROOT/config['template_dir']/t['file']).read_text()
+            created, sent, phone, cancelled, failed = self.execute([
+                dict(text=text,choice=i),
+                dict(text=text,choice='Send to pillar bot',tags=['mach-outbox']),
+                dict(text=text,choice='Send to pillar bot',platform='iOS'),
+                dict(text=text,choice=i,cancel=True),
+                dict(text=text,choice='Send to pillar bot',failWrite=True),
+            ], 'na')
+            doc=fm.validate(fm.parse_text(created['created']['content']))
+            self.assertFalse(doc.errors,doc.errors)
+            self.assertEqual(doc.meta,created['validation_created']['m'])
+            self.assertFalse(created['validation_created']['problems'])
+            self.assertTrue(cancelled['cancelled'])
+            self.assertIn('na',created['created']['tags'])
+            if doc.meta['type']=='subsystem-prompt':
+                self.assertIsNone(sent['failed'])
+                self.assertEqual(sent['writes'][0],['/files/inbox/subsystems/drafts-abcdef01-2345-6789-abcd-0123456789ab.md',text])
+                self.assertNotIn('mach-outbox',sent['tags'])
+                self.assertEqual(phone['bookmarks'],0)
+                self.assertIn('mach-outbox',phone['tags'])
+                self.assertIn('writeString returned false',failed['messages'][0])
+                resend=self.execute([dict(text=text,choice='Send to pillar bot',tags=['mach-sent']),dict(text=text,choice='Send to pillar bot',tags=['mach-sent'],cancelResend=True)],'na')
+                self.assertEqual(resend[0]['writes'],sent['writes'])
+                self.assertTrue(resend[1]['cancelled'])
+            else:
+                self.assertFalse(sent['writes'])
+                self.assertIn('requires',sent['failed'])
+        text=(ROOT/'config/drafts/na-templates/pillar-prompt.md').read_text()
+        wrong=self.execute([dict(text=text.replace('subsystem: na','subsystem: other'),choice='Send to pillar bot')],'na')[0]
+        self.assertFalse(wrong['writes'])
+        self.assertIn('subsystem must be na',wrong['failed'])
+        for source in ('tools/build-drafts-hub.py','tools/drafts-hub/hub.js','tools/drafts-hub/frontmatter.js'):
+            self.assertNotRegex((ROOT/source).read_text(),r'\bNA\b|\bna\b')
+
     def test_shipped_artifacts(self):
-        for adapter,filename in (('mach','Mach-Hub'),('na','NA-Mach-Hub')):
+        for adapter,filename in (('mach','Mach-Hub'),('na','NA-Hub')):
             action=json.loads((ROOT/('drafts/Importing/'+filename+'.draftsAction')).read_text())
             script=action['steps'][0]['data']['script']
             hub=json.loads(script.splitlines()[0][len('const HUB = '):-1])
