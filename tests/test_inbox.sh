@@ -84,8 +84,21 @@ assert_contains "CONFLICT" "conflict is visible"
 assert_file_has "$TARGET" "Read the original article." "existing inbox file is preserved"
 
 export DRAFTS_CONTENT='not a mach document'
+export DRAFTS_ID=00000000-0000-0000-0000-000000000002
+run --json inbox pull-drafts --apply
+assert_rc 0 "plain tagged note is captured"
+assert_eq "True" "$(json_get 'd["items"][0]["wrapped"]')" "plain note is marked wrapped"
+assert_file_has "$MACH_MF_ROOT/files/inbox/prompts/drafts-$DRAFTS_ID.md" "Source: drafts://x-callback-url/open?uuid=$DRAFTS_ID" "capture keeps source link"
+assert_file_has "$MACH_MF_ROOT/files/inbox/prompts/drafts-$DRAFTS_ID.md" "not a mach document" "capture keeps original text"
+
+export DRAFTS_ID="$ID"
+export DRAFTS_CONTENT='---
+mach: 1
+type: task
+---
+broken brief'
 run inbox pull-drafts --apply
-assert_rc 1 "invalid draft is retained"
+assert_rc 1 "malformed structured brief is retained"
 assert_contains "INVALID" "validation failure is visible"
 
 export MACH_OS=linux

@@ -5,10 +5,10 @@
 # mach-writes: yes
 # mach-usage: mach inbox pull-drafts [--apply] [--json] [--limit N]
 # mach-flag: --limit | maximum number of tagged drafts to inspect in one run | 50
-# mach-help: On macOS, reads Drafts tagged mach-outbox and validates each mach prompt document.
+# mach-help: On macOS, reads Drafts tagged mach-outbox; validates briefs or wraps plain notes for read-only triage.
 # mach-help: Preview shows titles and destinations. --apply writes each document once, then archives its Drafts copy.
 # mach-help: A failed archive can be retried safely: the same Drafts UUID maps to the same inbox file.
-# mach-help: Invalid or changed drafts stay in Drafts for correction; no AI task runs automatically.
+# mach-help: Invalid or changed drafts stay in Drafts for correction; pickup itself does not run an AI task.
 import argparse
 import json
 import os
@@ -64,6 +64,22 @@ def pending(limit):
         if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_CONTENT:
             yield {"id": ident, "status": "invalid", "reason": "missing or oversized content"}
             continue
+        # A plain tagged note is an explicit capture request. Give it a safe,
+        # read-only triage route; malformed Mach frontmatter still needs repair.
+        wrapped = False
+        if not content.startswith("---") and content.strip():
+            content = ("---\n"
+                       "mach: 1\n"
+                       "type: task\n"
+                       "title: Captured Drafts note %s\n"
+                       "goal: Summarize and triage this note; recommend next actions without editing files or sending messages\n"
+                       "tool: auto\n"
+                       "machine: any\n"
+                       "output: stdout\n"
+                       "tags: [drafts, capture]\n"
+                       "---\n"
+                       "Source: drafts://x-callback-url/open?uuid=%s\n\n%s" % (ident, ident, content))
+            wrapped = True
         doc = fm.parse_text(content)
         fm.validate(doc)
         if doc.errors:
@@ -72,7 +88,8 @@ def pending(limit):
         folder = "subsystems" if doc.meta.get("type") in SETUP_TYPES else "prompts"
         relative = "files/inbox/%s/drafts-%s.md" % (folder, ident.lower())
         yield {"id": ident, "status": "ready", "title": doc.meta.get("title", ""),
-               "type": doc.meta["type"], "path": relative, "content": content}
+               "type": doc.meta["type"], "path": relative, "content": content,
+               "wrapped": wrapped}
 
 
 def deliver(item):
@@ -127,7 +144,7 @@ def main():
     try:
         for item in pending(args.limit):
             result = {k: item[k] for k in ("id", "status")}
-            for key in ("title", "type", "path", "reason"):
+            for key in ("title", "type", "path", "reason", "wrapped"):
                 if key in item:
                     result[key] = item[key]
             if item["status"] == "ready":
