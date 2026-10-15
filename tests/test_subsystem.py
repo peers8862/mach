@@ -52,14 +52,14 @@ class SubsystemTests(unittest.TestCase):
         script = ROOT / 'tools/build-drafts-hub.py'
         with tempfile.TemporaryDirectory() as d:
             a, b = pathlib.Path(d) / 'a.json', pathlib.Path(d) / 'b.json'
-            subprocess.check_call([sys.executable, str(script), '--templates', str(FIX / 'templates'), '--out', str(a)], stdout=subprocess.DEVNULL)
-            subprocess.check_call([sys.executable, str(script), '--templates', str(FIX / 'templates'), '--out', str(b)], stdout=subprocess.DEVNULL)
+            subprocess.check_call([sys.executable, str(script), '--templates', str(FIX / 'templates'), '--out', str(a)], stdout=subprocess.DEVNULL, env=dict(os.environ, MACH_CONFIG_DIR=d))
+            subprocess.check_call([sys.executable, str(script), '--templates', str(FIX / 'templates'), '--out', str(b)], stdout=subprocess.DEVNULL, env=dict(os.environ, MACH_CONFIG_DIR=d))
             before = a.read_bytes()
             self.assertEqual(before, b.read_bytes())
         action = json.loads(before)
         js = action['steps'][0]['data']['script']
-        self.assertIn('Bookmark.findOrCreate', js)
-        self.assertIn('New: ', js)
+        self.assertIn('Bookmark.find(', js)
+        self.assertIn('New task brief', js)
         if subprocess.call(['bash','-c','command -v node >/dev/null']) == 0:
             with tempfile.NamedTemporaryFile('w', suffix='.js') as f:
                 f.write(js); f.flush()

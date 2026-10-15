@@ -1,0 +1,54 @@
+{
+  "name": "NA: Mach Hub",
+  "action_uuid": "25F53AC0-AF0B-53CD-AB30-CA172E50A5E7",
+  "step_uuid": "5517EA4C-D6F9-5EB5-B1A6-D47A8B365907",
+  "group_uuid": "0776A915-74D5-5575-AC7A-F6B1029B5AC0",
+  "tags": [
+    "mach"
+  ],
+  "bookmark": "machine-flows",
+  "destinations": {
+    "default": "files/inbox/prompts",
+    "subsystem-setup": "files/inbox/subsystems",
+    "unit-setup": "files/inbox/subsystems",
+    "role-change": "files/inbox/subsystems"
+  },
+  "templates": [
+    {
+      "file": "task-brief.md",
+      "label": "New task brief"
+    },
+    {
+      "file": "research-brief.md",
+      "label": "New research brief"
+    },
+    {
+      "file": "flow-request.md",
+      "label": "New flow"
+    },
+    {
+      "file": "subsystem-prompt.md",
+      "label": "New subsystem prompt"
+    },
+    {
+      "file": "mags-issue.md",
+      "label": "New mags issue"
+    },
+    {
+      "file": "newslines-entry.md",
+      "label": "New newslines entry"
+    },
+    {
+      "file": "subsystem-setup.md",
+      "label": "New subsystem setup"
+    },
+    {
+      "file": "unit-setup.md",
+      "label": "New unit setup"
+    },
+    {
+      "file": "role-change.md",
+      "label": "New role change"
+    }
+  ]
+}

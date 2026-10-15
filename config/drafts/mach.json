@@ -1,0 +1,30 @@
+{
+  "name": "Mach Hub",
+  "action_uuid": "709DFE9C-C214-5AB7-841A-6F0ECD7A27C0",
+  "step_uuid": "BD773D18-D433-561B-9128-A963624B6BAD",
+  "group_uuid": "2B5D4DA7-3D54-53A4-86C4-62A5421C74A7",
+  "tags": [
+    "mach"
+  ],
+  "bookmark": "machine-flows",
+  "destinations": {
+    "default": "files/inbox/prompts",
+    "subsystem-setup": "files/inbox/subsystems",
+    "unit-setup": "files/inbox/subsystems",
+    "role-change": "files/inbox/subsystems"
+  },
+  "templates": [
+    {
+      "file": "task-brief.md",
+      "label": "New task brief"
+    },
+    {
+      "file": "research-brief.md",
+      "label": "New research brief"
+    },
+    {
+      "file": "flow-request.md",
+      "label": "New flow"
+    }
+  ]
+}

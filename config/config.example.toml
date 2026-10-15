@@ -92,5 +92,5 @@ macstat_cron_pattern = "machine-flows"   # crontab lines matching this (grep -E)
 
 # ---------------------------------------------------------------- Drafts hub (tools/build-drafts-hub.py)
 [drafts]
-hub_name = "Mach Hub"             # name of the generated Drafts action; --name overrides it
-hub_group_uuid = ""               # Drafts action group to import into; empty = a stable generated id
+hub_name = "Mach Hub"             # legacy; hub identity now comes from config/drafts/*.json
+hub_group_uuid = ""               # legacy; use the adapter group_uuid instead

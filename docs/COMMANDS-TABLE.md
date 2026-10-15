@@ -18,6 +18,7 @@ The workbook `docs/sheets/mach.xlsx` has the same data plus functions, config ke
 | `doctor` |  | `mach doctor [--json] [--quiet]` | Read-only health checks for this machine (Syncthing, services, CLI names, Grok Bot, disk, hygiene, caps) | upkeep | working | no | no | no |
 | `flow` |  | `mach flow <name> [input...] [--dry-run] [--queue] [--write] [--json]` | Run a multi-step recipe (flow) with approval gates | gateway | working | yes | no | yes |
 | `flow` | `list` | `mach flow list` | Run a multi-step recipe (flow) with approval gates | gateway | working | no | no | no |
+| `inbox` | `pull-drafts` | `mach inbox pull-drafts [--apply] [--json] [--limit N]` | Bring tagged Drafts from the Mac into the synced mach inbox | gateway | working | yes | yes | no |
 | `inventory` |  | `mach inventory [--host H] [--section S] [--light\|--full] [--diff] [--apply]` | Regenerate inventory/`<host>`/ for this machine, show the diff, write only with --apply | upkeep | working | yes | yes | no |
 | `mcp` | `render` | `mach mcp [render] [--tool T]` | Render (dry-run) or apply the MCP server manifest for each tool via scripts/mcp-apply.sh | upkeep | working | no | no | no |
 | `mcp` | `apply` | `mach mcp apply [--tool T] [--apply]` | Render (dry-run) or apply the MCP server manifest for each tool via scripts/mcp-apply.sh | upkeep | stub | yes | yes | no |
@@ -90,6 +91,9 @@ The workbook `docs/sheets/mach.xlsx` has the same data plus functions, config ke
 | `flow` | `--queue` |  | Record the run as queued instead of executing it now |  |
 | `flow` | `--write` |  | Allow the tool to edit files (default is read-only) | `routes.permission (read-only)` |
 | `flow` | `--json` |  | Machine-readable JSON output |  |
+| `inbox` | `--apply` |  | Carry out the change; without it the command only previews | `preview` |
+| `inbox` | `--json` |  | Machine-readable JSON output |  |
+| `inbox` | `--limit` | `N` | maximum number of tagged drafts to inspect in one run | `50` |
 | `inventory` | `--host` | `H` | Act on this host | `this machine` |
 | `inventory` | `--section` | `S` | regenerate only this section | `all sections` |
 | `inventory` | `--light` |  | skip the slow size, network and brew checks | `on for macOS` |

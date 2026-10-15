@@ -206,3 +206,6 @@ Recorded 2026-10-08 during the autonomous build (no questions were asked). Forma
   and when a tracked text file holds a personal path, email, IP or token. The `docs-history.local.py` and `config.toml` of a real
   installation stay outside the repository.
 
+
+- Drafts hubs (Phase A): one generator composes lintable JS sources with JSON project adapters. Adapters, rather than project branches in JS, own menus, tags, destinations and pinned import identities. Python exports schema and value-rule data to the JS checker; parity tests compare parsed values, acceptance and warnings. The Python parser also rejects list-valued types cleanly.
+- Mac sends and the Drafts collector share `drafts-<lowercase-uuid>.md`. Send preserves content and clears outbox after writing, avoiding footer differences on collector retries. Confirmed resends replace that same file; they do not create a new request. Mobile sends never access folder bookmarks. Import/sync verification and additional Phase B/C actions remain separate work.

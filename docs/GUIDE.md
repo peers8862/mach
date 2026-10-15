@@ -222,7 +222,7 @@ when installed, and checks the publishable files for personal data.
 | `sheets` | working (lint, build, new, refresh mach) | more generated sets (plans register, inventory) if wanted; a `--deep` lint that diffs workbook cells against the CSVs |
 | `do`, `ask`, `research`, `run`, `flow`, `status`, `queue`, `approve`, `reject` | working | `--machine` over SSH/tmux (after Tailscale); retention compaction |
 | `note` | working (flush, outbox, MCP, URL, CLI) | Obsidian / Apple Notes / Reminders destinations |
-| Drafts "Mach Hub" action | spec only (plan 08 section 3.6) | build it; `mach inbox pull-drafts` for iPhone drafts |
+| Drafts "Mach Hub" action | built; project adapters and shared JS | build with `tools/build-drafts-hub.py`; collect iPhone outbox with `mach inbox pull-drafts --apply` |
 | Timers | none installed by mach; an example is a systemd user timer on the collector machine that runs `mach memory review --save` monthly | morning flow, inbox pickup: each needs the user's approval and a row in `inventory/<host>/76-custom-scheduled-jobs.md` |
 
 ## 13. Rules for agents
@@ -292,3 +292,20 @@ recorded by `build` (see DECISIONS).
 drift: the tests run it, so adding a command, flag or function without refreshing fails the suite. Every source is in the repo, so a
 clean clone passes the same check. A command's status comes from `# mach-status:` (`working`,
 `preview-only`, `stub`, optionally `sub=value`), and every flag in a usage line needs a meaning (a test enforces it).
+
+### Drafts hub builds
+
+Build either adapter into an explicit output path:
+
+```bash
+python3 tools/build-drafts-hub.py --adapter config/drafts/mach.json --templates /path/to/templates --out Mach-Hub.draftsAction
+python3 tools/build-drafts-hub.py --adapter config/drafts/na.json --templates /path/to/templates --out NA-Mach-Hub.draftsAction
+```
+
+The default adapter is `config/drafts/mach.json`. Adapter configs own the name, action/step/group UUIDs, ordered template filenames and labels, tags, bookmark name and destination folders. The NA example keeps the installed **NA: Mach Hub** identity so importing offers replacement. Preserve those IDs on rebuild; `--name` intentionally creates a distinct action identity. No host-config identity overrides are applied. JS lives in `tools/drafts-hub/`; schemas and configured machine enums are embedded at build time from `lib/frontmatter.py`. Rebuild after changing machine configuration. Identical sources, adapter, templates and machine configuration produce identical bytes.
+
+The generic menu includes task, research and flow briefs. Project-specific and dated setup examples belong to project adapters. Check reports flow input as a warning. New briefs default empty due dates to tomorrow in the device's local calendar.
+
+On Mac, create a Drafts folder bookmark named `machine-flows` for the machine-flows root before sending. Send writes `files/inbox/<prompts|subsystems>/drafts-<lowercase-uuid>.md`, the same name used by the collector. A successful send clears `mach-outbox` and sets `mach-sent`; resending requires confirmation and overwrites the same file. Content stays unchanged so a collector retry sees identical bytes. On iPhone, Send tags `mach-outbox`; run `mach inbox pull-drafts --apply` on the Mac. Mac bookmark/write failures show their reason and also leave the draft in the outbox. Keep outbox drafts in the Drafts inbox for collection. Sending only queues work; it does not execute it.
+
+`python3 -m unittest discover -s tests -p 'test_drafts_hub.py'` runs parity and mocked action execution tests. Node-dependent checks skip if Node is unavailable. Live import, bookmark access and device sync still require verification in Drafts.

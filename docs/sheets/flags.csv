@@ -35,6 +35,9 @@ flow,--dry-run,,Show what would happen and change nothing,
 flow,--queue,,Record the run as queued instead of executing it now,
 flow,--write,,Allow the tool to edit files (default is read-only),routes.permission (read-only)
 flow,--json,,Machine-readable JSON output,
+inbox,--apply,,Carry out the change; without it the command only previews,preview
+inbox,--json,,Machine-readable JSON output,
+inbox,--limit,N,maximum number of tagged drafts to inspect in one run,50
 inventory,--host,H,Act on this host,this machine
 inventory,--section,S,regenerate only this section,all sections
 inventory,--light,,"skip the slow size, network and brew checks",on for macOS

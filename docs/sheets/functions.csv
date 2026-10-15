@@ -369,6 +369,10 @@ libexec/mach-docs-collect.py,area_kind,python,
 libexec/mach-docs-collect.py,lin_walk,python,
 libexec/mach-doctor,main,python,
 libexec/mach-flow,main,python,
+libexec/mach-inbox,drafts_json,python,Call the official Drafts CLI and parse one JSON result.
+libexec/mach-inbox,pending,python,Yield checked documents from the tagged Drafts inbox.
+libexec/mach-inbox,deliver,python,"Save by stable Drafts ID, then archive the source only after a matching save."
+libexec/mach-inbox,main,python,Preview or deliver tagged drafts on the Mac.
 libexec/mach-inventory,cleanup,bash,shellcheck disable=SC2317 # runs through the EXIT trap
 libexec/mach-inventory,wanted,bash,wanted <relative path>: section filter
 libexec/mach-inventory,protected,bash,

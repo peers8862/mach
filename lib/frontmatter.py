@@ -62,6 +62,12 @@ SCHEMA = {
 ALL_KEYS = sorted(set(k for v in SCHEMA.values() for k in v["required"] + v["optional"]))
 
 
+TEXT_REQUIRED = ["title", "goal", "question", "flow", "subsystem", "unit", "id", "name", "working_root", "role", "to", "date", "reason"]
+TEXT_OPTIONAL = ["path", "input", "output", "due"]
+DATE_KEYS = ["date", "due"]
+LIST_KEYS = ["tags", "sources"]
+
+
 class ParsedDoc(object):
     def __init__(self):
         self.meta = {}
@@ -246,7 +252,7 @@ def validate(doc):
     if "type" not in meta:
         doc.errors.append((1, "missing required key 'type' (one of %s)" % ", ".join(TYPES)))
         typ = None
-    elif typ not in SCHEMA:
+    elif not isinstance(typ, str) or typ not in SCHEMA:
         doc.errors.append((doc.lines["type"], "type: %r is not one of %s" % (typ, ", ".join(TYPES))))
         typ = None
     if "mach" not in meta:
@@ -270,16 +276,16 @@ def validate(doc):
     _check_enum(doc, "approval", APPROVALS)
     _check_enum(doc, "depth", DEPTHS)
     _check_enum(doc, "reply", ["chat", "inbox"])
-    for key in ("title", "goal", "question", "flow", "subsystem", "unit", "id", "name", "working_root", "role", "to", "date", "reason"):
+    for key in TEXT_REQUIRED:
         _check_str(doc, key, True)
-    for key in ("path", "input", "output", "due"):
+    for key in TEXT_OPTIONAL:
         _check_str(doc, key, False)
     if "date" in meta and not re.match(r"^\d{4}-\d{2}-\d{2}$", str(meta["date"])):
         doc.errors.append((doc.lines["date"], "date must be YYYY-MM-DD"))
     if "due" in meta and meta["due"] != "":
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(meta["due"])):
             doc.errors.append((doc.lines["due"], "due: %r is not YYYY-MM-DD" % (meta["due"],)))
-    for key in ("tags", "sources"):
+    for key in LIST_KEYS:
         if key in meta and not isinstance(meta[key], list):
             doc.errors.append((doc.lines[key], "%s: expected an inline list like [a, b]" % key))
     if isinstance(meta.get("sources"), list):

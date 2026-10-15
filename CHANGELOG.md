@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Drafts hubs now use separate JavaScript sources and project adapter JSON configs. The NA adapter pins the installed action identity; the generic menu starts with task and research briefs.
+- Generate validation rules from Python frontmatter definitions, including enums, dates, lists and flow-input warnings. Reject list-valued document types without crashing.
+- Send by stable Drafts UUID, confirm resends, preserve brief content, clear outbox on Mac success, and show write failures. iPhone sends tag the outbox without opening bookmarks; cancellation cancels the action. Due defaults use the local calendar.
+- Add deterministic rebuild, schema parity and mocked Drafts execution tests, with clean Node skips.
+
 ## 1.3.0 — 2026-10-08
 
 - Public release: the tree holds no personal names, machines, paths or accounts. `~/machine-flows` stays the default root.

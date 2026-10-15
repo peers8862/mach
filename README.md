@@ -39,7 +39,7 @@ mac-laptop = "mac-laptop"
 ```
 
 Without `[machines]` the machine name is the short hostname. Other keys added in 1.3.0: `[docs] macstat_paths`, `macstat_cron_pattern`
-and `[drafts] hub_name`, `hub_group_uuid` (the Drafts hub builder, `tools/build-drafts-hub.py --name NAME`). Per-host overrides:
+and JSON Drafts hub adapters in `config/drafts/` (`tools/build-drafts-hub.py --adapter config/drafts/mach.json`). Legacy `[drafts]` identity keys are ignored by the builder. Per-host overrides:
 `config/hosts/*.example.toml`.
 
 ## Quick start

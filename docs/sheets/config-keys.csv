@@ -40,8 +40,8 @@ memory,lessons_dir,"""service-memories/lessons""",
 memory,reviews_dir,"""""",empty = <lessons_dir>/reviews (env MACH_REVIEWS_DIR overrides); `mach memory review --save` writes YYYY-MM.md there
 docs,macstat_paths,[],extra paths (relative to ~ on the Mac) `mach docs macstat` should stat
 docs,macstat_cron_pattern,"""machine-flows""",crontab lines matching this (grep -E) are recorded by `mach docs macstat`
-drafts,hub_name,"""Mach Hub""",name of the generated Drafts action; --name overrides it
-drafts,hub_group_uuid,"""""",Drafts action group to import into; empty = a stable generated id
+drafts,hub_name,"""Mach Hub""",legacy; hub identity now comes from config/drafts/*.json
+drafts,hub_group_uuid,"""""",legacy; use the adapter group_uuid instead
 env,MACH_DEFAULT_TOOL,,overrides config key routes.default_tool
 env,MACH_NOTE_DEFAULT,,overrides config key note.default
 env,MACH_PEER_SSH,,overrides config key doctor.peer_ssh

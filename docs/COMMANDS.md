@@ -300,6 +300,21 @@ file in the run folder and the step is marked "handoff". The input is read from 
 --dry-run lists the steps and the exact tool commands (prompts truncated) and writes nothing.
 ```
 
+## mach inbox
+
+Bring tagged Drafts from the Mac into the synced mach inbox
+
+```text
+mach inbox pull-drafts [--apply] [--json] [--limit N]
+```
+
+```text
+On macOS, reads Drafts tagged mach-outbox; validates briefs or wraps plain notes for read-only triage.
+Preview shows titles and destinations. --apply writes each document once, then archives its Drafts copy.
+A failed archive can be retried safely: the same Drafts UUID maps to the same inbox file.
+Invalid or changed drafts stay in Drafts for correction; pickup itself does not run an AI task.
+```
+
 ## mach note
 
 Quick capture to inbox, Agenda, Drafts or a named destination
