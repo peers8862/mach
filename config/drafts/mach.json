@@ -21,10 +21,16 @@
     {
       "file": "research-brief.md",
       "label": "New research brief"
-    },
-    {
-      "file": "flow-request.md",
-      "label": "New flow"
     }
+  ],
+  "actions": [
+    "Check frontmatter",
+    "Send to mach",
+    "Quick capture",
+    "Status",
+    "Open result",
+    "Approve",
+    "Reject",
+    "Show next step"
   ]
 }

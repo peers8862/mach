@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import sys
+import time
 
 import mach_common as mc
 import mach_runs as mr
@@ -130,7 +131,27 @@ def exec_ai(run, n, tool, prompt, workdir, write, cfg, stream, outname=None):
     if note:
         run.note("%s: %s" % (tool, note))
     cwd = workdir if workdir and os.path.isdir(workdir) else None
+    run.meta["actual_tool"] = tool
+    run.meta["tool_command"] = argv[0]
+    run.meta.setdefault("fallbacks", [])
+    run.meta["agent_start"] = mc.now().astimezone().isoformat()
+    run.save()
+    started = time.monotonic()
     rc, text = mr.tee_exec(argv, cwd, mr.log_path(run.id), stream)
+    run.meta["agent_end"] = mc.now().astimezone().isoformat()
+    run.meta["elapsed_seconds"] = str(round(time.monotonic() - started, 3))
+    transcript = run.path_of("transcript.txt")
+    with open(transcript, "a", encoding="utf-8") as log:
+        log.write(text)
+    run.meta["transcript"] = "transcript.txt"
+    errors = [line for line in text.splitlines()
+              if re.search(r"quota|rate[ -]?limit|too many requests|\b429\b", line, re.I)]
+    run.meta["quota_errors"] = list(run.meta.get("quota_errors", [])) + errors
+    if re.search(r"index\.lock|read-only file system|read.only.*\.git|permission denied.*\.git|\.git.*permission denied", text, re.I):
+        warning = "Commit blocked by sandbox or read-only Git metadata; review transcript"
+        run.meta["warnings"] = list(run.meta.get("warnings", [])) + [warning]
+        run.note(warning)
+    run.save()
     outname = outname or "output-%d.md" % n
     mc.write_text(run.path_of(outname), text)
     run.add_output(outname)
@@ -233,9 +254,11 @@ def prompt_for(doc):
 def plan_doc(doc, cfg, tool=None, machine=None, path=None, write=False):
     meta = doc.meta
     rt = route(cfg, tool=tool or meta.get("tool"), machine=machine or meta.get("machine"), path=path or meta.get("path") or None,
-               permission=None, write=write)
+               permission=meta.get("permission"), write=write)
     okind, opath = resolve_output(meta.get("output", "stdout"), meta.get("title", "run"), rt["path"])
     approval = meta.get("approval", "none")
+    if rt["permission"] == "write":
+        approval = "before-run"
     gates = []
     if approval == "before-run":
         gates.append("before-run")
@@ -289,6 +312,7 @@ def start_prompt_run(cfg, doc, doc_path, rep, *, tool=None, machine=None, path=N
 
 def continue_prompt_run(run, cfg, rep, json_mode=False):
     """Drive a prompt-document run through its stages and gates. Returns an exit code."""
+    run.meta.setdefault("picked_up", mc.now().astimezone().isoformat())
     doc = fm.parse_file(run.path_of("input.md"))
     fm.validate(doc)
     work = mc.expand(run.meta.get("path_abs", "")) or mc.mf_root()
@@ -323,7 +347,7 @@ def continue_prompt_run(run, cfg, rep, json_mode=False):
             run.set_status("failed", reason="tool %s not found on PATH" % tool)
             mc.eprint("mach: tool %r not found on PATH" % tool)
             return mc.EXIT_FAIL
-        rc, text, outname = exec_ai(run, 1, tool, plan["prompt"], work, run.meta.get("permission") == "write", cfg, stream=not json_mode)
+        rc, text, outname = exec_ai(run, 1, tool, plan["prompt"], work, run.meta.get("permission") == "write", cfg, stream=not json_mode and not run.meta.get("approval_approved"))
         if rc != 0:
             run.set_step(1, status="failed", output=outname)
             run.set_status("failed", reason="%s exited %d" % (tool, rc))
@@ -599,6 +623,8 @@ def continue_flow(run, cfg, rep, json_mode=False):
 def approve_run(run, cfg, rep, step=None, json_mode=False):
     if run.status != "waiting-approval":
         mc.die("run %s is %s, not waiting-approval" % (run.id, run.status))
+    run.meta["approval_approved"] = mc.now().astimezone().isoformat()
+    run.save()
     if run.meta.get("kind") == "flow":
         if run.meta.get("gate") == "before-run":
             if step is not None:
@@ -622,7 +648,9 @@ def approve_run(run, cfg, rep, step=None, json_mode=False):
     run.meta["approved"] = approved
     run.note("gate '%s' approved %s" % (g, mc.now().strftime("%Y-%m-%d %H:%M")))
     run.save()
-    return continue_prompt_run(run, cfg, rep, json_mode=json_mode)
+    rc = continue_prompt_run(run, cfg, rep, json_mode=json_mode)
+    rep.say("Transcript: %s" % run.path_of("transcript.txt"))
+    return rc
 
 
 def reject_run(run, reason):

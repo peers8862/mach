@@ -4,7 +4,7 @@ A run record is a folder:
   run.md        frontmatter (id, created, machine, tool, path, status, input, outputs ...) + steps table + notes
   input.md      a copy of the input (prompt document, task text, or flow input)
   output-N.md / step-N-*.md   outputs
-Raw tool logs stay local (~/.local/state/mach/logs/), never in machine-flows.
+Full agent output is also saved as transcript.txt in the run folder.
 Each machine writes only its own runs.
 """
 import os
@@ -90,6 +90,8 @@ class Run(object):
     # ---- mutation helpers
     def set_status(self, status, reason=None, gate=None):
         assert status in STATUSES, status
+        if status == "waiting-approval":
+            self.meta["approval_requested"] = mc.now().astimezone().isoformat()
         self.meta["status"] = status
         if reason is not None:
             self.meta["reason"] = reason

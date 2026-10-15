@@ -27,7 +27,7 @@ def main(out=None, name=None, templates=None, adapter=None):
         doc = fm.parse_text(text)
         entries.append(dict(item, text=text, type=doc.meta['type']))
     rules = dict(schema=fm.SCHEMA, version=fm.SCHEMA_VERSION,
-                 enums=dict(tool=fm.TOOLS, machine=fm.machines(), approval=fm.APPROVALS, depth=fm.DEPTHS, reply=['chat','inbox']),
+                 enums=dict(permission=["read-only","write"], tool=fm.TOOLS, machine=fm.machines(), approval=fm.APPROVALS, depth=fm.DEPTHS, reply=['chat','inbox']),
                  sources=fm.SOURCES, text_required=fm.TEXT_REQUIRED, text_optional=fm.TEXT_OPTIONAL, dates=fm.DATE_KEYS, lists=fm.LIST_KEYS)
     script = 'const HUB = '+json.dumps(dict(adapter, templates=entries), ensure_ascii=False)+';\n'
     script += 'const RULES = '+json.dumps(rules, ensure_ascii=False)+';\n'

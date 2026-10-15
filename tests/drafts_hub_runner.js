@@ -10,8 +10,8 @@ function run(req) {
   const draft=makeDraft(req.text,req.tags||[]);
   const sandbox={Date:req.now ? class extends Date { constructor(...args){super(...(args.length?args:[req.now]));} } : Date,draft,device:{systemName:req.platform||'macOS'},
     context:{cancel(){events.cancelled=true;},fail(e){events.failed=e;}},
-    editor:{load(d){events.created=d;}},Draft:{create(){return makeDraft();}},
-    Prompt:{create(){return {fieldValues:{},addSelect(k,l,labels){this.fieldValues[k]=[typeof req.choice==='number'?labels[req.choice]:req.choice];},addButton(){},addLabel(k,v){events.messages.push(v);},show(){return this.title==='Resend this draft?'?!req.cancelResend:!req.cancel;}};}},
+    editor:{load(d){events.created=d;}},Draft:{create(){return makeDraft();},query(){return (req.results||[]).map(r=>makeDraft(r.content,r.tags));}},
+    Prompt:{create(){return {fieldValues:{},addSelect(k,l,labels){this.fieldValues[k]=[typeof req.choice==='number'?labels[req.choice]:req.choice];},addTextField(k){this.fieldValues[k]=req.reason||"";},addButton(){},addLabel(k,v){events.messages.push(v);},show(){return this.title==='Resend this draft?'?!req.cancelResend:!req.cancel;}};}},
     Bookmark:{find(){events.bookmarks++;if(req.missingBookmark)return null;return {};}},
     FileManager:{createForBookmark(){return {createDirectory(){return true;},writeString(p,s){if(req.throwWrite)throw Error('disk full');events.writes.push([p,s]);return !req.failWrite;}};}}
   };

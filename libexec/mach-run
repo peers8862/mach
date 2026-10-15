@@ -10,6 +10,8 @@
 # mach-help: --dry-run shows the plan and the exact tool command (prompt truncated) and creates no record.
 # mach-help: --queue creates a queued run and returns its id at once. `machine: any` queues for the background machine ([queue] background_machine, default this machine).
 # mach-help: --inbox runs every files/inbox/prompts/*.md addressed to this machine that has not run yet.
+# mach-help: Task/research permission: write grants tool writes, including --inbox, and forces a before-run approval gate.
+# mach-help: Run records include pickup/approval/agent timings, actual tool, quota errors, Git sandbox warnings and transcript.txt.
 # mach-help: approval: before-run waits at a gate first; before-apply runs the tool read-only and waits before writing the output.
 # mach-help: output: pr or linear-comment is outward: it ALWAYS stops at a gate (exit 3) and, once approved, only writes a
 # mach-help: ready-to-run handoff (mach never opens PRs or posts). type: flow documents are handed to `mach flow`.

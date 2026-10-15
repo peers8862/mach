@@ -244,6 +244,7 @@ mach approve <id> [--step N] [--json]
 <id> may be a unique prefix. Only runs with status waiting-approval can be approved.
 Flows continue from the gate step (--step N must match the pending gate). Prompt runs continue past
 their before-run / apply / outward gate. An approved outward step still only writes a handoff file.
+Agent output is saved in the run folder transcript.txt; approval prints a short status and transcript path.
 Exit codes follow the run: 0 done, 2 failure, 3 if the run reaches another gate.
 ```
 
@@ -397,6 +398,8 @@ number (exit 2). The input file is never modified; its state lives in the run re
 --dry-run shows the plan and the exact tool command (prompt truncated) and creates no record.
 --queue creates a queued run and returns its id at once. `machine: any` queues for the background machine ([queue] background_machine, default this machine).
 --inbox runs every files/inbox/prompts/*.md addressed to this machine that has not run yet.
+Task/research permission: write grants tool writes, including --inbox, and forces a before-run approval gate.
+Run records include pickup/approval/agent timings, actual tool, quota errors, Git sandbox warnings and transcript.txt.
 approval: before-run waits at a gate first; before-apply runs the tool read-only and waits before writing the output.
 output: pr or linear-comment is outward: it ALWAYS stops at a gate (exit 3) and, once approved, only writes a
 ready-to-run handoff (mach never opens PRs or posts). type: flow documents are handed to `mach flow`.

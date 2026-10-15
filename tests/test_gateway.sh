@@ -357,4 +357,23 @@ run --json queue
 assert_json "queue --json"
 run status nosuchrun
 assert_rc 2 "unknown run id"
+# Frontmatter write requests from inbox must wait before executing.
+rm "$MACH_MF_ROOT/files/inbox/prompts/20261008-0903-bad.md"
+task_doc "$MACH_MF_ROOT/files/inbox/prompts/write-brief.md" "permission: write" "approval: none"
+: > "$SANDBOX/mock-calls.log"
+run run --inbox
+assert_rc 3 "write inbox brief waits for approval"
+assert_eq "" "$(mock_calls)" "inbox write gate executes no tool"
+RID=$(find "$MACH_RUNS_DIR" -name run.md -exec sh -c 'grep -l "source: files/inbox/prompts/write-brief.md" "$1"' sh {} \; | head -1)
+assert_file_has "$RID" "permission: write" "write mode recorded"
+assert_file_has "$RID" "approval_requested:" "approval request timestamp recorded"
+WRITE_ID=$(basename "$(dirname "$RID")")
+run approve "$WRITE_ID"
+assert_rc 0 "approved inbox write runs"
+OUT=$(mock_calls); assert_contains "acceptEdits" "approved inbox uses write tool flags"
+assert_file_has "$RID" "agent_start:" "agent start recorded"
+assert_file_has "$RID" "agent_end:" "agent end recorded"
+assert_file_has "$RID" "approval_approved:" "approval timestamp recorded"
+assert_file "$(dirname "$RID")/transcript.txt" "agent transcript saved in run folder"
+
 finish

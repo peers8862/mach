@@ -48,7 +48,7 @@ class HubTests(unittest.TestCase):
         self.assertEqual(self.actions['na']['steps'][0]['uuid'], '5517EA4C-D6F9-5EB5-B1A6-D47A8B365907')
         self.assertEqual(self.actions['na']['groupUUID'], '0776A915-74D5-5575-AC7A-F6B1029B5AC0')
         hub = json.loads((ROOT/'config/drafts/mach.json').read_text())
-        self.assertEqual([t['label'] for t in hub['templates']], ['New task brief','New research brief','New flow'])
+        self.assertEqual([t['label'] for t in hub['templates']], ['New task brief','New research brief'])
 
     def test_parity(self):
         texts = [p.read_text() for p in sorted((ROOT/'tests/fixtures/templates').glob('*.md'))]
@@ -57,6 +57,7 @@ class HubTests(unittest.TestCase):
         for key in fm.SCHEMA['task']['required']+fm.SCHEMA['task']['optional']:
             for value in ('"1"','true','[]','[a, "b,c"]','""','bogus','2026-01-02','[oops','"oops','{x: y}'):
                 texts.append(re.sub(r'^'+key+r':.*$',key+': '+value,task,flags=re.M))
+        texts += [task.replace('mach: 1','mach: 1\npermission: '+permission) for permission in ('write','read-only','bogus','[]','true')]
         texts += [task.replace('type: task','type: toString'), task.replace('title:', ' title:'), task.replace('---','---  '),
                   task.replace('title: Short name for this task','title: "A # quoted title"'),
                   task.replace('mach: 1','mach: 1\nmach: 1'), 'plain note', '---\nmach: 1',
@@ -145,3 +146,35 @@ class HubTests(unittest.TestCase):
         for r,reason in zip(results[3:],('disk full','writeString returned false','Missing machine-flows')):
             self.assertIn(reason,r['messages'][0])
             self.assertIn('mach-outbox',r['tags'])
+
+    def test_phase_b_actions_every_template(self):
+        for template in ('task-brief.md', 'research-brief.md'):
+            text=(ROOT/'tests/fixtures/templates'/template).read_text()
+            cases=[dict(text=text,choice=c) for c in ('Quick capture','Status','Open result','Approve','Reject')]
+            cases[-1]['reason']='Needs revision'
+            capture,status,opened,approve,reject=self.execute(cases,'mach')
+            self.assertIn('mach-outbox',capture['tags'])
+            self.assertIn('Not connected yet',status['messages'][0])
+            self.assertIn('Not connected yet',opened['messages'][0])
+            for r,decision in ((approve,'approve'),(reject,'reject')):
+                self.assertIsNone(r['failed'])
+                self.assertEqual(len(r['writes']),1)
+                self.assertIn('/files/inbox/decisions/abcdef01-2345-6789-abcd-0123456789ab.md',r['writes'][0][0])
+                self.assertIn('decision: '+decision,r['writes'][0][1])
+                self.assertIn('Not connected yet',r['messages'][0])
+            results=self.execute([
+                dict(text=text,choice='Open result',results=[dict(content='Completed',tags=[])]),
+                dict(text=text,choice='Reject'),
+                dict(text=text,choice='Approve',platform='iOS'),
+                dict(text=text,choice='Approve',cancel=True),
+                dict(text=text,choice='Approve',failWrite=True),
+            ],'mach')
+            self.assertEqual(results[0]['created']['content'],'Completed')
+            self.assertFalse(results[1]['writes'])
+            self.assertFalse(results[2]['bookmarks'])
+            self.assertTrue(results[3]['cancelled'])
+            self.assertIn('Decision write failed',results[4]['failed'])
+        script=self.actions['mach']['steps'][0]['data']['script']
+        hub=json.loads(script.splitlines()[0][len('const HUB = '):-1])
+        self.assertEqual(len(hub['templates'])+len(hub['actions']),10)
+        self.assertEqual(self.actions['mach']['uuid'],'709DFE9C-C214-5AB7-841A-6F0ECD7A27C0')

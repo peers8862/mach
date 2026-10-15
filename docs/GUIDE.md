@@ -309,3 +309,29 @@ The generic menu includes task, research and flow briefs. Project-specific and d
 On Mac, create a Drafts folder bookmark named `machine-flows` for the machine-flows root before sending. Send writes `files/inbox/<prompts|subsystems>/drafts-<lowercase-uuid>.md`, the same name used by the collector. A successful send clears `mach-outbox` and sets `mach-sent`; resending requires confirmation and overwrites the same file. Content stays unchanged so a collector retry sees identical bytes. On iPhone, Send tags `mach-outbox`; run `mach inbox pull-drafts --apply` on the Mac. Mac bookmark/write failures show their reason and also leave the draft in the outbox. Keep outbox drafts in the Drafts inbox for collection. Sending only queues work; it does not execute it.
 
 `python3 -m unittest discover -s tests -p 'test_drafts_hub.py'` runs parity and mocked action execution tests. Node-dependent checks skip if Node is unavailable. Live import, bookmark access and device sync still require verification in Drafts.
+
+
+## Mach Hub: ten actions
+
+Build locally with `python3 tools/build-drafts-hub.py --templates tests/fixtures/templates --out drafts/Importing/Mach-Hub.draftsAction`.
+The pinned action UUID survives rebuilding. The menu offers new task, new research,
+check, idempotent send, quick capture (mach-outbox), status, open result, approve,
+reject and next step. Mac sends replace the same UUID-named inbox file; iOS queues
+the outbox for `mach inbox pull-drafts --apply`. Plain quick captures are wrapped
+by that collector for triage.
+
+The local result contract uses a draft tagged `mach-result` and
+`mach-request-<lowercase-request-uuid>`. Status shows its body and open result
+loads it. Approve/reject write `files/inbox/decisions/<uuid>.md` on Mac with
+`request` and `decision` frontmatter and the reason in the body. Rejection requires
+a reason. These actions report “Not connected yet”: result publishing and decision
+consumption remain unbuilt. They do not approve a mach run. Use the run ID with
+`mach approve` / `mach reject`. See DECISIONS.md for duplicate and overwrite rules.
+
+Task/research briefs may declare `permission: write` (or `read-only`). Write
+execution always waits for before-run approval, even via `mach run --inbox`.
+Run records store picked_up, approval_requested, approval_approved, agent_start,
+agent_end, elapsed_seconds, actual_tool, tool_command, fallbacks, quota_errors and
+warnings. There is currently no automatic fallback. Full agent output is saved in
+the run folder as transcript.txt; approval prints status and its path. Review that
+file for quota/rate-limit errors or a sandbox-blocked commit warning.

@@ -209,3 +209,34 @@ Recorded 2026-10-08 during the autonomous build (no questions were asked). Forma
 
 - Drafts hubs (Phase A): one generator composes lintable JS sources with JSON project adapters. Adapters, rather than project branches in JS, own menus, tags, destinations and pinned import identities. Python exports schema and value-rule data to the JS checker; parity tests compare parsed values, acceptance and warnings. The Python parser also rejects list-valued types cleanly.
 - Mac sends and the Drafts collector share `drafts-<lowercase-uuid>.md`. Send preserves content and clears outbox after writing, avoiding footer differences on collector retries. Confirmed resends replace that same file; they do not create a new request. Mobile sends never access folder bookmarks. Import/sync verification and additional Phase B/C actions remain separate work.
+
+
+## Drafts local result and decision contract (Phase B)
+
+Request identity is the lowercase Drafts request UUID, matching
+`files/inbox/prompts/drafts-<uuid>.md`. A future result publisher must create
+exactly one draft tagged both `mach-result` and `mach-request-<uuid>`; its body
+is the human-readable status/result, including the mach run ID and next command.
+Status displays that body; open result loads the unique match. Missing or duplicate
+results are reported, never guessed. On a result draft the request tag supplies
+identity; on a request draft its own UUID supplies identity.
+
+On macOS, approve/reject confirm and overwrite
+`files/inbox/decisions/<uuid>.md` through the machine-flows bookmark:
+flat frontmatter `request: <uuid>`, `decision: approve|reject`, then a body
+containing the reason (required for reject). This is a pending local decision,
+not an executed approval. Latest confirmed decision replaces the earlier file.
+Mach does not yet publish result drafts or consume these files. Actions explicitly
+say “Not connected yet”; use `mach approve <run-id>` or `mach reject <run-id> "reason"`
+until a consumer maps request UUIDs to waiting runs and verifies the gate.
+iOS cannot write decisions and reports that limitation.
+
+Task/research `permission: write` is validated and forces before-run approval,
+including inbox runs and briefs requesting none/before-apply. CLI --write also
+requires this gate for prompt documents. No automatic alternate-tool execution
+exists: `fallbacks: []` records that fact. The actual configured binary and tool
+are recorded separately. Full merged agent stdout/stderr goes to transcript.txt
+in the run folder (and therefore may sync); local command logs remain local.
+Timing fields use ISO timestamps with the host offset; elapsed_seconds measures
+agent execution using a monotonic clock. Quota errors and sandbox warnings are
+output heuristics; warnings do not override the agent exit status.

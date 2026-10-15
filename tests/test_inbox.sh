@@ -101,6 +101,30 @@ run inbox pull-drafts --apply
 assert_rc 1 "malformed structured brief is retained"
 assert_contains "INVALID" "validation failure is visible"
 
+# Generated task/research actions round-trip through the actual collector and planner.
+if command -v node >/dev/null 2>&1; then
+  for choice in 0 1; do
+    export DRAFTS_ID="00000000-0000-0000-0000-00000000001$choice"
+    DRAFTS_CONTENT=$(python3 - "$TEST_ROOT" "$choice" <<'PYCODE'
+import json, pathlib, subprocess, sys
+root=pathlib.Path(sys.argv[1])
+action=json.loads((root/'drafts/Importing/Mach-Hub.draftsAction').read_text())
+request=dict(script=action['steps'][0]['data']['script'],requests=[dict(text='',choice=int(sys.argv[2]))])
+result=subprocess.check_output(['node',str(root/'tests/drafts_hub_runner.js')],input=json.dumps(request).encode())
+print(json.loads(result)[0]['created']['content'])
+PYCODE
+)
+    export DRAFTS_CONTENT
+    run inbox pull-drafts --apply
+    assert_rc 0 "generated template collects"
+    run inbox pull-drafts --apply
+    assert_rc 0 "generated template resends idempotently"
+    assert_eq "1" "$(find "$MACH_MF_ROOT/files/inbox/prompts" -name "drafts-$DRAFTS_ID.md" | wc -l | tr -d ' ')" "one request file per UUID"
+    run run --inbox --dry-run
+    assert_rc 0 "generated templates round-trip through inbox planning"
+  done
+fi
+
 export MACH_OS=linux
 run inbox pull-drafts --apply
 assert_rc 1 "Linux cannot pull Mac Drafts"

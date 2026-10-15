@@ -7,6 +7,7 @@
 # mach-help: <id> may be a unique prefix. Only runs with status waiting-approval can be approved.
 # mach-help: Flows continue from the gate step (--step N must match the pending gate). Prompt runs continue past
 # mach-help: their before-run / apply / outward gate. An approved outward step still only writes a handoff file.
+# mach-help: Agent output is saved in the run folder transcript.txt; approval prints a short status and transcript path.
 # mach-help: Exit codes follow the run: 0 done, 2 failure, 3 if the run reaches another gate.
 import argparse
 import os

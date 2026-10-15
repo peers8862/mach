@@ -32,11 +32,11 @@ COMMON_OPTIONAL = ["machine", "due", "approval", "tags"]
 SCHEMA = {
     "task": {
         "required": ["mach", "type", "title", "goal", "tool", "output"],
-        "optional": ["path", "machine", "due", "approval", "tags"],
+        "optional": ["permission", "path", "machine", "due", "approval", "tags"],
     },
     "research": {
         "required": ["mach", "type", "title", "question", "output"],
-        "optional": ["depth", "tool", "sources", "machine", "due", "approval", "tags"],
+        "optional": ["permission", "depth", "tool", "sources", "machine", "due", "approval", "tags"],
     },
     "flow": {
         "required": ["mach", "type", "title", "flow", "input"],
@@ -274,6 +274,7 @@ def validate(doc):
     _check_enum(doc, "tool", TOOLS)
     _check_enum(doc, "machine", machines())
     _check_enum(doc, "approval", APPROVALS)
+    _check_enum(doc, "permission", ["read-only", "write"])
     _check_enum(doc, "depth", DEPTHS)
     _check_enum(doc, "reply", ["chat", "inbox"])
     for key in TEXT_REQUIRED:
